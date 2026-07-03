@@ -1,0 +1,37 @@
+# Network
+
+network_type: linear # Linear, ...
+
+representation:
+    latent_space_dims: 8
+    fc_hidden_size: 8
+    n_layers: 3
+dynamic:
+    latent_space_dims: 8
+    fc_hidden_size: 8
+    n_layers: 3
+prediction:
+    latent_space_dims: 8
+    fc_hidden_size: 8
+    n_layers: 3
+  
+# Environment
+action_space: 2
+obs_dim: 4 # TODO: image/2d support
+
+# Training + algorithm
+n_steps: 10
+unroll_steps: 5
+batch_size: 32
+discount: 0.997
+num_simulations: 10
+dirichlet_noise: 0.1
+total_steps: 1000000
+
+temperature_schedule:
+    - step: 500000
+      tau: 1.0
+    - step: 750000
+      tau: 0.5
+    - step: null   # remaining steps
+      tau: 0.25
