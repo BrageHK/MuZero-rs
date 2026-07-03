@@ -1,13 +1,15 @@
 use burn::{
     Tensor,
     module::Module,
+    record::{BinBytesRecorder, FullPrecisionSettings, Recorder},
     tensor::{Float, Int, backend::Backend},
 };
 
+use crate::mz_config::MuZeroConfig;
 use crate::networks::{
-    dynamic::{DynamicModel, DynamicModelConfig},
-    prediction::{PredictionModel, PredictionModelConfig},
-    representation::{RepresentationModel, RepresentationModelConfig},
+    dynamic::DynamicModel,
+    prediction::PredictionModel,
+    representation::RepresentationModel,
 };
 
 #[derive(Module, Debug)]
@@ -30,9 +32,11 @@ impl<B: Backend> MuZeroAgent<B> {
         let hidden_state = self.representation.forward(obs);
         let (value, policy) = self.prediction.forward(hidden_state.clone());
 
+        let batch_size = hidden_state.dims()[0];
+
         (
             hidden_state.clone(),
-            Tensor::zeros([1, 1], &hidden_state.device()),
+            Tensor::zeros([batch_size, 1], &hidden_state.device()),
             value,
             policy,
         )
@@ -55,4 +59,15 @@ impl<B: Backend> MuZeroAgent<B> {
 
         (hidden_state, reward, value, policy)
     }
+}
+
+pub fn agent_to_backend<B1: Backend, B2: Backend>(
+    agent: &MuZeroAgent<B1>,
+    mz_conf: &MuZeroConfig,
+    device: &B2::Device,
+) -> MuZeroAgent<B2> {
+    let recorder = BinBytesRecorder::<FullPrecisionSettings>::default();
+    let bytes = recorder.record(agent.clone().into_record(), ()).unwrap();
+    let record = recorder.load(bytes, device).unwrap();
+    mz_conf.init::<B2>(device).load_record(record)
 }

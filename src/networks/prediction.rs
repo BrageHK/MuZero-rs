@@ -1,7 +1,7 @@
 use burn::{
     Tensor,
     module::Module,
-    nn::{Linear, LinearConfig},
+    nn::{Linear, LinearConfig, Relu},
     tensor::{activation::softmax, backend::Backend},
 };
 
@@ -13,22 +13,23 @@ pub struct PredictionModel<B: Backend> {
     value2: Linear<B>,
     policy1: Linear<B>,
     policy2: Linear<B>,
+    relu: Relu,
 }
 
 impl<B: Backend> PredictionModel<B> {
     /// Returns (value, policy)
     pub fn forward(&self, hidden: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
-        let x = self.backbone1.forward(hidden);
-        let x = self.backbone2.forward(x);
+        let x = self.relu.forward(self.backbone1.forward(hidden));
+        let x = self.relu.forward(self.backbone2.forward(x));
 
-        let value = self.value1.forward(x.clone());
+        let value = self.relu.forward(self.value1.forward(x.clone()));
         let value = self.value2.forward(value);
 
-        let policy = self.policy1.forward(x);
+        let policy = self.relu.forward(self.policy1.forward(x));
         let policy = self.policy2.forward(policy);
         let policy = softmax(policy, 1);
 
-        (value.tanh(), policy)
+        (value, policy)
     }
 }
 
@@ -48,6 +49,7 @@ impl PredictionModelConfig {
             value2: LinearConfig::new(self.fc_hidden_size, 1).init(device),
             policy1: LinearConfig::new(self.fc_hidden_size, self.fc_hidden_size).init(device),
             policy2: LinearConfig::new(self.fc_hidden_size, self.action_space).init(device),
+            relu: Relu,
         }
     }
 }

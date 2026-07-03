@@ -30,7 +30,6 @@ pub struct NetworkSubConfig {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(default)]
 pub struct MuZeroConfig {
     pub network_type: NetworkType,
 
@@ -45,9 +44,12 @@ pub struct MuZeroConfig {
     pub unroll_steps: usize,
     pub batch_size: usize,
     pub discount: f32,
+    pub learning_rate: f64,
     pub num_simulations: usize,
     pub dirichlet_noise: f32,
+    pub root_exploration_fraction: f32,
     pub total_steps: usize,
+    pub train_steps_per_game: usize,
 
     // Original muzero paper uses t = 1 first 500k steps, t = 0.5 for next 250k and 0.25 for remaining
     pub temperature_schedule: Vec<TemperatureSchedule>,
@@ -73,7 +75,7 @@ impl MuZeroConfig {
             representation: RepresentationModelConfig {
                 hidden_size: self.representation.latent_space_dims,
                 fc_hidden_size: self.representation.fc_hidden_size,
-                input_size: self.action_space,
+                input_size: self.obs_dim,
             }
             .init::<B>(device),
             dynamic: DynamicModelConfig {

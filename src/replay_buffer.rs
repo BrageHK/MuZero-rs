@@ -13,7 +13,7 @@ pub struct BufferData<B: Backend> {
 }
 
 pub struct ReplayBuffer<B: Backend> {
-    games: Vec<Vec<BufferData<B>>>,
+    pub games: Vec<Vec<BufferData<B>>>,
     cumulative_lengths: Vec<usize>,
     pub total_positions: usize,
     rng: Rng,
@@ -137,14 +137,14 @@ mod tests {
         mz_config.batch_size = 1;
         let device = Default::default();
         let mut buffer = ReplayBuffer::<B>::default();
-        // Game shorter than n_steps: last step always absorbing
-        buffer.store_game(create_game::<B>(9, &device));
-        assert_eq!(buffer.sample_games(&mz_config)[0].len(), mz_config.n_steps);
-        assert_eq!(buffer.sample_games(&mz_config)[0][mz_config.n_steps - 1].value, 0.);
-        assert_eq!(buffer.sample_games(&mz_config)[0][mz_config.n_steps - 1].reward, 0.);
+        // Game shorter than unroll_steps: last step always absorbing
+        buffer.store_game(create_game::<B>(3, &device));
+        assert_eq!(buffer.sample_games(&mz_config)[0].len(), mz_config.unroll_steps);
+        assert_eq!(buffer.sample_games(&mz_config)[0][mz_config.unroll_steps - 1].value, 0.);
+        assert_eq!(buffer.sample_games(&mz_config)[0][mz_config.unroll_steps - 1].reward, 0.);
         buffer.store_game(create_game::<B>(100, &device));
         for _ in 0..4 {
-            assert_eq!(buffer.sample_games(&mz_config)[0].len(), mz_config.n_steps);
+            assert_eq!(buffer.sample_games(&mz_config)[0].len(), mz_config.unroll_steps);
         }
     }
 
@@ -156,9 +156,9 @@ mod tests {
         let mut buffer = ReplayBuffer::<B>::default();
         buffer.store_game(create_game::<B>(1, &device));
         for _ in 0..3 {
-            assert_eq!(buffer.sample_games(&mz_config)[0].len(), mz_config.n_steps);
+            assert_eq!(buffer.sample_games(&mz_config)[0].len(), mz_config.unroll_steps);
         }
-        for i in 1..mz_config.n_steps {
+        for i in 1..mz_config.unroll_steps {
             let sample = buffer.sample_games(&mz_config);
             assert_eq!(sample[0][i].value, 0.);
             assert_eq!(sample[0][i].reward, 0.);

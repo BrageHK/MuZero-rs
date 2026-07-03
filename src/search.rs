@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use burn::{
     Tensor,
-    tensor::{Int, backend::Backend, cast::ToElement},
+    tensor::{Int, backend::Backend},
 };
 use rand_distr::{Distribution, multi::Dirichlet};
 
@@ -50,7 +50,7 @@ pub fn search<B: Backend>(
     tau: f32,
 ) -> (Vec<f32>, f32, usize) {
     let device = obs.device();
-    let discount: f32 = 0.997;
+    let discount: f32 = mz_conf.discount;
     let mut norm = QNormalization::default();
 
     let mut nodes =
@@ -60,19 +60,25 @@ pub fn search<B: Backend>(
     let (root_hidden_state, root_reward, root_value, root_policy) = mz_agent.initial_forward(obs);
     let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_noise; mz_conf.action_space]).unwrap();
     let noise = dirichlet.sample(&mut rand::rng());
+    let frac = mz_conf.root_exploration_fraction;
+
+    let root_reward_val = read_scalar(root_reward);
+    let root_value_val = read_scalar(root_value);
+    let root_policy_vals = read_vec(root_policy);
+
     let root_node = Node {
         visits: 1,
         action: 0, // This action is irelevant
         hidden_state: Some(root_hidden_state.squeeze_dim(0)),
         children: (1..=mz_conf.action_space).collect(),
-        cumulative_value: root_value.into_scalar().to_f32(),
-        reward: root_reward.into_scalar().to_f32(),
+        cumulative_value: root_value_val,
+        reward: root_reward_val,
         policy: 0.,
     };
 
     nodes.push(root_node);
 
-    for (idx, policy) in root_policy.iter_dim(1).enumerate() {
+    for (idx, policy) in root_policy_vals.into_iter().enumerate() {
         nodes.push(Node {
             visits: 0,
             action: idx,
@@ -80,12 +86,11 @@ pub fn search<B: Backend>(
             cumulative_value: 0.,
             reward: 0.,
             children: Vec::new(),
-            policy: policy.into_scalar().to_f32() + noise[idx],
+            policy: (1.0 - frac) * policy + frac * noise[idx],
         });
     }
 
     for _sim_step in 0..mz_conf.num_simulations {
-        //println!("Sim step: {}", sim_step);
         // Selection: PUCT
         let start_time = Instant::now();
 
@@ -126,9 +131,6 @@ pub fn search<B: Backend>(
             path.push(curr_node_idx);
         }
 
-        let end = start_time.elapsed();
-        println!("Used {}ms for Selection", end.as_millis());
-
         // Expansion: run recurrent_forward from parent with action that led to leaf
         let start_time = Instant::now();
         let [.., parent_idx, leaf_idx] = path.as_slice() else {
@@ -139,19 +141,20 @@ pub fn search<B: Backend>(
             None => panic!("Parent node has no hidden state!"),
         };
         let action_tensor = Tensor::<B, 1, Int>::from_data([nodes[*leaf_idx].action], &device);
-        let start_nn_time = Instant::now();
         let (new_hs, new_reward, new_value, new_policy) = mz_agent.recurrent_forward(
             parent_hs.clone().unsqueeze(),
             action_tensor,
             mz_conf.action_space,
         );
-        let el = start_nn_time.elapsed();
 
         let new_policy_len = new_policy.dims()[1];
 
         let nodes_len = nodes.len();
 
-        for (idx, policy) in new_policy.iter_dim(1).enumerate() {
+        let new_reward_val = read_scalar(new_reward);
+        let new_value_val = read_scalar(new_value);
+        let new_policy_vals = read_vec(new_policy);
+        for (idx, policy) in new_policy_vals.into_iter().enumerate() {
             nodes.push(Node {
                 visits: 0,
                 action: idx,
@@ -159,26 +162,25 @@ pub fn search<B: Backend>(
                 cumulative_value: 0.,
                 reward: 0.,
                 children: Vec::new(),
-                policy: policy.into_scalar().to_f32(),
+                policy,
             });
         }
 
         let curr_node = &mut nodes[*leaf_idx];
 
         curr_node.hidden_state = Some(new_hs.squeeze_dim(0));
-        println!("Used {}ms for nn inference.", el.as_millis());
-        curr_node.reward = new_reward.into_scalar().to_f32();
+        // println!("Used {}ms for nn inference.", el.as_millis());
+        curr_node.reward = new_reward_val;
 
         for idx in 0..new_policy_len {
             curr_node.children.push(nodes_len + idx);
         }
 
         let end = start_time.elapsed();
-        println!("Used {}ms for Expansion", end.as_millis());
 
         // Backprop: walk path from leaf to root, accumulate discounted returns
         let start_time = Instant::now();
-        let mut back_value = new_value.into_scalar().to_f32();
+        let mut back_value = new_value_val;
         for &node_idx in path.iter().rev() {
             let curr_node = &mut nodes[node_idx];
             curr_node.visits += 1;
@@ -186,12 +188,11 @@ pub fn search<B: Backend>(
             back_value = curr_node.reward + discount * back_value;
         }
         let end = start_time.elapsed();
-        println!("Used {}ms for Backprop\n", end.as_millis());
     }
 
     let root_node = &nodes[0];
     let value = nodes[0].cumulative_value / (nodes[0].visits as f32);
-    let mut visit_distribution = Vec::<f32>::with_capacity(mz_conf.action_space);
+    let mut visit_distribution = vec![0.0f32; mz_conf.action_space];
     if tau == 0.0 {
         let best_child_idx = root_node
             .children
@@ -201,40 +202,14 @@ pub fn search<B: Backend>(
             Some(child_idx) => nodes[*child_idx].action,
             None => panic!("There are no child nodes."),
         };
-        for i in 0..mz_conf.action_space {
-            if i == best_action {
-                visit_distribution[i] = 1.0;
-            } else {
-                visit_distribution[i] = 0.0;
-            }
-        }
-        return (visit_distribution, value, best_action);
-    } else if tau == 0.0 {
-        let visit_sum: usize = root_node
-            .children
-            .iter()
-            .map(|child_idx| nodes[*child_idx].visits)
-            .sum();
-        let visit_sum: f32 = (visit_sum as f32).powf(1.0);
-        let mut highest_visits = 0;
-        let mut best_action = 0;
-        for child_idx in &root_node.children {
-            let action = nodes[*child_idx].action;
-            let child_visits = nodes[*child_idx].visits;
-            if child_visits > highest_visits {
-                highest_visits = child_visits;
-                best_action = action;
-            }
-            visit_distribution[action] = (child_visits as f32).powf(1.0) / visit_sum;
-        }
-        return (visit_distribution, value, best_action);
+        visit_distribution[best_action] = 1.0;
+        (visit_distribution, value, best_action)
     } else {
-        let visit_sum: usize = root_node
+        let visit_sum: f32 = root_node
             .children
             .iter()
-            .map(|child_idx| nodes[*child_idx].visits)
+            .map(|child_idx| (nodes[*child_idx].visits as f32).powf(1.0 / tau))
             .sum();
-        let visit_sum: f32 = (visit_sum as f32).powf(1.0 / tau);
         let mut highest_visits = 0;
         let mut best_action = 0;
         for child_idx in &root_node.children {
@@ -246,8 +221,18 @@ pub fn search<B: Backend>(
             }
             visit_distribution[action] = (child_visits as f32).powf(1.0 / tau) / visit_sum;
         }
-        return (visit_distribution, value, best_action);
+        (visit_distribution, value, best_action)
     }
+}
+
+// Single-element [1, 1] tensor -> f32, one host transfer.
+fn read_scalar<B: Backend>(t: Tensor<B, 2>) -> f32 {
+    t.into_data().to_vec::<f32>().unwrap()[0]
+}
+
+// [1, N] tensor -> Vec<f32>, one host transfer instead of N.
+fn read_vec<B: Backend>(t: Tensor<B, 2>) -> Vec<f32> {
+    t.into_data().to_vec::<f32>().unwrap()
 }
 
 // TODO: Only use tensor operations?
