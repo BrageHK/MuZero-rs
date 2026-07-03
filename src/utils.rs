@@ -1,7 +1,7 @@
 use burn::tensor::{Device, backend::Backend};
 
 #[allow(unreachable_code)]
-fn select_device<B: Backend>() -> Device<B> {
+fn select_device() -> Device {
     #[cfg(not(any(
         feature = "tch-gpu",
         feature = "tch-cpu",
