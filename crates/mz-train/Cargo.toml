@@ -1,0 +1,82 @@
+[package]
+name = "mz-train"
+version.workspace = true
+edition.workspace = true
+
+# Sources live at the crate root (not src/), so lib/bin paths are explicit.
+# Lib name stays `mz_rs` because bins and benches import `use mz_rs::...`.
+[lib]
+name = "mz_rs"
+path = "lib.rs"
+
+[[bin]]
+name = "train"
+path = "bin/train.rs"
+
+[[bin]]
+name = "train_parallel"
+path = "bin/train_parallel.rs"
+
+[[bin]]
+name = "play"
+path = "bin/play.rs"
+
+[[bin]]
+name = "run_env"
+path = "bin/run_env.rs"
+
+[[bin]]
+name = "batch_speed_test"
+path = "bin/batch_speed_test.rs"
+
+[[bin]]
+name = "parallel_games_test"
+path = "bin/parallel_games_test.rs"
+
+[dependencies]
+burn = { workspace = true, features = [
+    "std",
+    "train",
+    "tui",
+    "vision",
+    "metrics",
+    "rl",
+    "flex",
+    "dispatch",
+    "autodiff",
+] }
+# Direct dep only to enable the LibTorch variant of the Dispatch backend:
+# burn 0.21's `tch` feature forgets to forward to burn-dispatch/tch.
+burn-dispatch = { version = "~0.21", default-features = false, optional = true }
+crossbeam = "0.8.4"
+fastrand = "2.4.1"
+gif = "0.14.2"
+gym-rs = { version = "0.3.1", branch = "main", git = "https://github.com/MathisWellmann/gym-rs", default-features = false }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+sdl2 = { version = "0.37", features = ["gfx", "use-pkgconfig"] }
+serde = { workspace = true }
+serde_yaml = "0.9.34"
+
+[features]
+# Pick backends for your system:
+#   cargo build --no-default-features --features ndarray,cuda
+default = ["ndarray", "wgpu"]
+ndarray = ["burn/ndarray"]
+wgpu = ["burn/wgpu", "burn/fusion"]
+metal = ["burn/metal", "burn/fusion"]
+vulkan = ["burn/vulkan", "burn/fusion"]
+cuda = ["burn/cuda", "burn/fusion"]
+rocm = ["burn/rocm", "burn/fusion"]
+tch = ["burn/tch", "dep:burn-dispatch", "burn-dispatch/tch"]
+
+[dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
+
+[[bench]]
+name = "search_speed"
+harness = false
+
+[[bench]]
+name = "throughput"
+harness = false

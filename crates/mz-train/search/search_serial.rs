@@ -1,13 +1,11 @@
-use std::time::Instant;
-
 use burn::{
     Tensor,
     tensor::{Int, backend::Backend},
 };
 use rand_distr::{Distribution, multi::Dirichlet};
 
-use crate::agent::{MuZeroAgent};
 use crate::mz_config::MuZeroConfig;
+use crate::networks::MuZeroNets;
 
 struct Node<B: Backend> {
     visits: usize,
@@ -17,7 +15,7 @@ struct Node<B: Backend> {
     reward: f32,
     children: Vec<usize>,
     policy: f32,
-} // TODO: Parallel lists, one list for nodes, another one for hidden states.
+}
 
 struct QNormalization {
     q_max: f32,
@@ -43,10 +41,10 @@ impl Default for QNormalization {
     }
 }
 
-pub fn search<B: Backend>(
+pub fn search<B: Backend, N: MuZeroNets<B>>(
     obs: Tensor<B, 2>,
     mz_conf: &MuZeroConfig,
-    mz_agent: &MuZeroAgent<B>,
+    mz_agent: &N,
     tau: f32,
 ) -> (Vec<f32>, f32, usize) {
     let device = obs.device();
@@ -57,7 +55,8 @@ pub fn search<B: Backend>(
         Vec::<Node<B>>::with_capacity((mz_conf.num_simulations + 1) * mz_conf.action_space);
 
     // Initialize and expand root (node 0)
-    let (root_hidden_state, root_reward, root_value, root_policy) = mz_agent.initial_forward(obs);
+    let (root_hidden_state, root_reward, root_value, root_policy) =
+        mz_agent.initial_inference(obs);
     let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_noise; mz_conf.action_space]).unwrap();
     let noise = dirichlet.sample(&mut rand::rng());
     let frac = mz_conf.root_exploration_fraction;
@@ -92,8 +91,6 @@ pub fn search<B: Backend>(
 
     for _sim_step in 0..mz_conf.num_simulations {
         // Selection: PUCT
-        let start_time = Instant::now();
-
         let mut curr_node_idx = 0;
         let mut path = vec![0usize];
         loop {
@@ -105,7 +102,7 @@ pub fn search<B: Backend>(
 
             let parent_visits = curr_node.visits;
 
-            // Find best child
+            // Find the best child
             let mut best_puct = f32::NEG_INFINITY;
             let mut best_node = 0usize;
             for child_idx in &curr_node.children {
@@ -131,8 +128,7 @@ pub fn search<B: Backend>(
             path.push(curr_node_idx);
         }
 
-        // Expansion: run recurrent_forward from parent with action that led to leaf
-        let start_time = Instant::now();
+        // Expansion: run recurrent_inference from parent with action that led to leaf
         let [.., parent_idx, leaf_idx] = path.as_slice() else {
             unreachable!()
         };
@@ -141,7 +137,7 @@ pub fn search<B: Backend>(
             None => panic!("Parent node has no hidden state!"),
         };
         let action_tensor = Tensor::<B, 1, Int>::from_data([nodes[*leaf_idx].action], &device);
-        let (new_hs, new_reward, new_value, new_policy) = mz_agent.recurrent_forward(
+        let (new_hs, new_reward, new_value, new_policy) = mz_agent.recurrent_inference(
             parent_hs.clone().unsqueeze(),
             action_tensor,
             mz_conf.action_space,
@@ -176,10 +172,7 @@ pub fn search<B: Backend>(
             curr_node.children.push(nodes_len + idx);
         }
 
-        let end = start_time.elapsed();
-
         // Backprop: walk path from leaf to root, accumulate discounted returns
-        let start_time = Instant::now();
         let mut back_value = new_value_val;
         for &node_idx in path.iter().rev() {
             let curr_node = &mut nodes[node_idx];
@@ -187,7 +180,6 @@ pub fn search<B: Backend>(
             curr_node.cumulative_value += back_value;
             back_value = curr_node.reward + discount * back_value;
         }
-        let end = start_time.elapsed();
     }
 
     let root_node = &nodes[0];
@@ -235,7 +227,6 @@ fn read_vec<B: Backend>(t: Tensor<B, 2>) -> Vec<f32> {
     t.into_data().to_vec::<f32>().unwrap()
 }
 
-// TODO: Only use tensor operations?
 fn puct(q_value: f32, prior: f32, parent_visits: i32, child_visits: i32) -> f32 {
     let c1: f32 = 1.25;
     let c2: i32 = 19652;

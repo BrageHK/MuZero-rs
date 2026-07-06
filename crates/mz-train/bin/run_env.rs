@@ -1,5 +1,5 @@
 use burn::rl::Environment;
-use mz_rs::env::{CartPoleAction, CartPoleWrapper};
+use mz_rs::env::cartpole::env::CartPoleWrapper;
 
 fn main() {
     let mut env = CartPoleWrapper::new(gym_rs::utils::renderer::RenderMode::Human);
@@ -12,9 +12,7 @@ fn main() {
         let mut steps = 0;
 
         loop {
-            let action = CartPoleAction {
-                action: rng.usize(0..2),
-            };
+            let action = rng.usize(0..2);
             let result = env.step(action);
             total_reward += result.reward;
             steps += 1;

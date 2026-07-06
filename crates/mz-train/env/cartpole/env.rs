@@ -5,7 +5,7 @@ use gym_rs::{
 };
 
 #[derive(Clone)]
-pub struct CartPoleAction {
+pub struct Action {
     pub action: usize,
 }
 
@@ -42,11 +42,22 @@ impl CartPoleWrapper {
             step_index: 0,
         }
     }
+
+    /// Frames collected since last reset requires RgbArray.
+    pub fn frames(&mut self) -> Vec<gym_rs::utils::renderer::RenderFrame> {
+        match self
+            .gym_env
+            .render(gym_rs::utils::renderer::RenderMode::RgbArray)
+        {
+            gym_rs::utils::renderer::Renders::RgbArray(frames) => frames,
+            _ => Vec::new(),
+        }
+    }
 }
 
 impl Environment for CartPoleWrapper {
     type State = CartPoleState;
-    type Action = CartPoleAction;
+    type Action = usize;
 
     const MAX_STEPS: usize = 500;
 
@@ -54,8 +65,8 @@ impl Environment for CartPoleWrapper {
         CartPoleState::from(self.gym_env.state)
     }
 
-    fn step(&mut self, action: Self::Action) -> StepResult<Self::State> {
-        let action_reward = self.gym_env.step(action.action);
+    fn step(&mut self, action: usize) -> StepResult<Self::State> {
+        let action_reward = self.gym_env.step(action);
         self.step_index += 1;
         StepResult {
             next_state: CartPoleState::from(action_reward.observation),

@@ -1,36 +1,45 @@
-use burn::backend::{
-    Autodiff, Wgpu,
-    ndarray::{NdArray, NdArrayDevice},
-    wgpu::WgpuDevice,
-};
 use burn::module::AutodiffModule;
+use burn::{Dispatch, DispatchDevice};
 use burn::optim::AdamConfig;
 use burn::rl::Environment;
 use burn::tensor::Tensor;
 use burn::tensor::backend::AutodiffBackend;
-use mz_rs::agent::{MuZeroAgent, agent_to_backend};
-use mz_rs::env::CartPoleAction;
-use mz_rs::mz_config::MuZeroConfig;
+use mz_rs::agent::MlpNets;
+use mz_rs::mz_config::{MuZeroConfig, NetworkType};
+use mz_rs::networks::nets_to_backend;
 use mz_rs::replay_buffer::BufferData;
-use mz_rs::search::search;
+use mz_rs::search::search_serial::search;
 use mz_rs::train::train;
-use mz_rs::{env::CartPoleWrapper, replay_buffer::ReplayBuffer};
+use mz_rs::utils::select_device;
+use mz_rs::{env::cartpole::env::CartPoleWrapper, replay_buffer::ReplayBuffer};
 use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;
 
 fn main() {
     // TODO: make training parallel so GPU search is faster than CPU search
-    type TrainB = Autodiff<Wgpu<f32, i32>>;
+    // Dispatch picks the concrete backend at runtime from the config; autodiff
+    // lives in the device, so TrainB/StoreB/InferB are all the same type.
+    type TrainB = Dispatch;
     type StoreB = <TrainB as AutodiffBackend>::InnerBackend;
-    type InferB = NdArray<f32>;
-    let device = WgpuDevice::default();
-    let infer_device = NdArrayDevice::default();
+    type InferB = Dispatch;
 
     let mz_conf = MuZeroConfig::default();
-    let mut agent = mz_conf.init::<TrainB>(&device);
-    let mut optimizer = AdamConfig::new().init::<TrainB, MuZeroAgent<TrainB>>();
-    let mut inference_agent =
-        agent_to_backend::<_, InferB>(&agent.valid(), &mz_conf, &infer_device);
+    if let NetworkType::ResNet = mz_conf.network_type {
+        panic!(
+            "network_type: ResNet has no compatible environment yet \
+             (cartpole obs is a flat vector) — use network_type: Linear"
+        );
+    }
+
+    // Plain device for buffer/store tensors, autodiff-wrapped for the model.
+    let device = select_device(mz_conf.training_backend);
+    let train_device = DispatchDevice::autodiff(device.clone());
+    let infer_device = select_device(mz_conf.inference_backend);
+
+    let mut agent: MlpNets<TrainB> = mz_conf.init_agent(&train_device);
+    let mut optimizer = AdamConfig::new().init::<TrainB, MlpNets<TrainB>>();
+    let mut inference_agent: MlpNets<InferB> =
+        nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
     let mut env = CartPoleWrapper::default();
 
     let mut buffer = ReplayBuffer::<StoreB>::default();
@@ -62,7 +71,7 @@ fn main() {
         let dist = WeightedIndex::new(&visit_distribution).unwrap();
         let action = dist.sample(&mut rand::rng());
 
-        let result = env.step(CartPoleAction { action });
+        let result = env.step(action);
 
         let buffer_data = BufferData {
             state: obs_store,
@@ -85,25 +94,25 @@ fn main() {
 
             for train_step in 0..mz_conf.train_steps_per_game {
                 let loss;
+                print!("Training!");
                 (agent, loss) = train(
                     agent,
                     &mut optimizer,
                     &mz_conf,
                     &mut buffer,
                     mz_conf.learning_rate,
-                    &device,
+                    &train_device,
                 );
-                if let Some(loss) = loss {
-                    println!(
-                        "Train step {}/{}: loss = {:.4}",
-                        train_step + 1,
-                        mz_conf.train_steps_per_game,
-                        loss
-                    );
-                }
+                // if let Some(loss) = loss {
+                //     println!(
+                //         "Train step {}/{}: loss = {:.4}",
+                //         train_step + 1,
+                //         mz_conf.train_steps_per_game,
+                //         loss
+                //     );
+                // }
             }
-            inference_agent =
-                agent_to_backend::<_, InferB>(&agent.valid(), &mz_conf, &infer_device);
+            inference_agent = nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
         }
     }
 }

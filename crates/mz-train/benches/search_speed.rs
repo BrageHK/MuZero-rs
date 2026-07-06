@@ -5,7 +5,7 @@ use burn::backend::{
 };
 use burn::tensor::Tensor;
 use criterion::{Criterion, criterion_group, criterion_main};
-use mz_rs::{mz_config::MuZeroConfig, search::search};
+use mz_rs::{agent::MlpNets, mz_config::MuZeroConfig, search::search_serial::search};
 use std::hint::black_box;
 
 // Compares MCTS search speed on the GPU (Wgpu) backend vs the CPU (NdArray)
@@ -16,7 +16,7 @@ fn bench_search_wgpu(c: &mut Criterion) {
     let device = WgpuDevice::default();
 
     let mz_conf = MuZeroConfig::default();
-    let agent = mz_conf.init::<B>(&device);
+    let agent = mz_conf.init::<B, MlpNets<B>>(&device);
     let obs = Tensor::<B, 2>::zeros([1, mz_conf.obs_dim], &device);
 
     c.bench_function("mcts_search_wgpu", |b| {
@@ -36,7 +36,7 @@ fn bench_search_ndarray(c: &mut Criterion) {
     let device = NdArrayDevice::default();
 
     let mz_conf = MuZeroConfig::default();
-    let agent = mz_conf.init::<B>(&device);
+    let agent = mz_conf.init::<B, MlpNets<B>>(&device);
     let obs = Tensor::<B, 2>::zeros([1, mz_conf.obs_dim], &device);
 
     c.bench_function("mcts_search_ndarray", |b| {

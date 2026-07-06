@@ -1,31 +1,14 @@
-[package]
-name = "mz-rs"
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-burn = { version = "~0.21", features = ["std", "tui", "train", "vision", "wgpu", "ndarray", "fusion", "flex", "metrics", "rl"], default-features = false }
-fastrand = "2.4.1"
-gym-rs = { version = "0.3.1", branch = "main", git = "https://github.com/MathisWellmann/gym-rs", default-features = false }
+[workspace.dependencies]
+burn = { version = "~0.21", default-features = false }
+burn-import = { version = "~0.21", features = ["onnx"] }
+serde = { version = "1.0.228", features = ["derive"] }
 rand = "0.10.1"
 rand_distr = "0.6.0"
-sdl2 = { version = "0.37", features = ["gfx", "use-pkgconfig"] }
-serde = "1.0.228"
-serde_yaml = "0.9.34"
-
-[features]
-default = ["burn/default", "burn/tui"]
-tch-cpu = ["burn/tch"]
-tch-gpu = ["burn/tch"]
-wgpu = ["burn/wgpu"]
-metal = ["burn/metal"]
-cuda = ["burn/cuda"]
-vulkan = ["burn/vulkan"]
-rocm = ["burn/rocm"]
-
-[dev-dependencies]
-criterion = { version = "0.8.2", features = ["html_reports"] }
-
-[[bench]]
-name = "search_speed"
-harness = false

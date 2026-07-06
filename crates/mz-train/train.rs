@@ -1,20 +1,24 @@
 use burn::{
+    module::AutodiffModule,
     optim::{Adam, GradientsParams, Optimizer, adaptor::OptimizerAdaptor},
     tensor::{Int, Tensor, backend::AutodiffBackend, cast::ToElement},
 };
 
-use crate::{agent::MuZeroAgent, mz_config::MuZeroConfig, replay_buffer::ReplayBuffer};
+use crate::{mz_config::MuZeroConfig, networks::MuZeroNets, replay_buffer::ReplayBuffer};
 
 const POLICY_LOSS_EPS: f32 = 1e-8;
 
-pub fn train<B: AutodiffBackend>(
-    mut agent: MuZeroAgent<B>,
-    optimizer: &mut OptimizerAdaptor<Adam, MuZeroAgent<B>, B>,
+pub fn train<B: AutodiffBackend, N>(
+    mut agent: N,
+    optimizer: &mut OptimizerAdaptor<Adam, N, B>,
     mz_conf: &MuZeroConfig,
     buffer: &mut ReplayBuffer<B::InnerBackend>,
     lr: f64,
     device: &B::Device,
-) -> (MuZeroAgent<B>, Option<f32>) {
+) -> (N, Option<f32>)
+where
+    N: MuZeroNets<B> + AutodiffModule<B>,
+{
     if buffer.total_positions <= mz_conf.batch_size {
         return (agent, None);
     }
@@ -42,7 +46,7 @@ pub fn train<B: AutodiffBackend>(
                     .map(|game| Tensor::<B, 2>::from_inner(game[0].state.clone()))
                     .collect();
                 let obs = Tensor::cat(obs, 0);
-                agent.initial_forward(obs)
+                agent.initial_inference(obs)
             }
             Some(prev_hidden_state) => {
                 let actions: Vec<i32> = sequence
@@ -53,7 +57,7 @@ pub fn train<B: AutodiffBackend>(
                 // Appendix G: Training, trick to scale by 0.5
                 let scaled_hidden_state = prev_hidden_state.clone() * 0.5
                     + prev_hidden_state.clone().detach() * 0.5;
-                agent.recurrent_forward(scaled_hidden_state, actions, mz_conf.action_space)
+                agent.recurrent_inference(scaled_hidden_state, actions, mz_conf.action_space)
             }
         };
 

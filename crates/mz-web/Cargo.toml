@@ -1,0 +1,33 @@
+[package]
+name = "mz-web"
+version.workspace = true
+edition.workspace = true
+
+# Sources live at the crate root (not src/).
+[lib]
+path = "lib.rs"
+# cdylib for the .wasm artifact, rlib so native tests/benches can link it.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Inference only. Backend picked via the features below; no burn/std by
+# default so the crate stays no_std (lib.rs is #![no_std] outside tests).
+burn = { workspace = true }
+# Declared directly (not workspace-inherited): workspace deps keep default
+# features (std) for mz-train, but this crate needs them off for no_std.
+rand = { version = "0.10.1", default-features = false }
+rand_distr = { version = "0.6.0", default-features = false, features = ["alloc"] }
+wasm-bindgen = "0.2"
+
+[build-dependencies]
+# Generates the burn model from an .onnx file at build time (build.rs).
+burn-import = { workspace = true }
+
+[features]
+# CPU (ndarray) is the default; wgpu targets WebGPU-capable browsers and
+# needs std:
+#   wasm-pack build crates/mz-web -- --no-default-features --features wgpu
+default = ["ndarray"]
+ndarray = ["burn/ndarray"]
+wgpu = ["burn/wgpu", "std"]
+std = ["burn/std", "rand/std", "rand_distr/std"]
