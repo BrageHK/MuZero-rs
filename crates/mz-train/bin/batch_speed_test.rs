@@ -2,20 +2,19 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use burn::{
-    Tensor,
-    backend::{NdArray, ndarray::NdArrayDevice},
+    Dispatch, Tensor,
     tensor::{Distribution, Shape, Transaction},
 };
 use mz_rs::agent::MlpNets;
 use mz_rs::mz_config::MuZeroConfig;
 use mz_rs::networks::MuZeroNets;
+use mz_rs::utils::select_device;
 
 fn main() {
-    // type B = Wgpu::<f32, i32>;
-    type B = NdArray<f32>;
-    let device = NdArrayDevice::default();
-    // let device = WgpuDevice::default();
+    // Backend picked at runtime from config (see BackendChoice).
+    type B = Dispatch;
     let mut mz_conf = MuZeroConfig::default();
+    let device = select_device(mz_conf.inference_backend);
 
     // Batch size speed test from 1 -> 1024
 

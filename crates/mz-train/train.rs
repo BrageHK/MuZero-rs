@@ -29,17 +29,14 @@ where
     let mut hidden_state: Option<Tensor<B, 2>> = None;
 
     for step in 0..mz_conf.unroll_steps {
-        println!("H");
         let target_value: Vec<f32> = sequence.iter().map(|game| game[step].value).collect();
         let target_value =
             Tensor::<B, 1>::from_floats(target_value.as_slice(), device).unsqueeze_dim(1);
-        println!("e");
 
         let target_policy: Vec<Tensor<B, 2>> = sequence
             .iter()
             .map(|game| Tensor::<B, 2>::from_inner(game[step].policy.clone()))
             .collect();
-        println!("l");
         let target_policy = Tensor::cat(target_policy, 0);
 
         let (new_hidden_state, reward, value, policy) = match &hidden_state {

@@ -3,16 +3,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use burn::backend::{
-    Autodiff,
-    ndarray::{NdArray, NdArrayDevice},
-};
 use burn::module::{AutodiffModule, Module};
 use burn::optim::AdamConfig;
 use burn::record::CompactRecorder;
 use burn::rl::Environment;
 use burn::tensor::Tensor;
 use burn::tensor::backend::{AutodiffBackend, Backend};
+use burn::{Dispatch, DispatchDevice};
 use crossbeam::channel::{Sender, unbounded};
 use mz_rs::agent::MlpNets;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
@@ -21,6 +18,7 @@ use mz_rs::networks::nets_to_backend;
 use mz_rs::replay_buffer::{BufferData, ReplayBuffer};
 use mz_rs::search::{InferenceHandles, inference_channels, inference_master, search};
 use mz_rs::train::train;
+use mz_rs::utils::select_device;
 use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;
 
@@ -85,16 +83,11 @@ fn worker_loop<StoreB: Backend, InferB: Backend>(
 }
 
 fn main() {
-    // type TrainB = Autodiff<Wgpu<f32, i32>>;
-    // type StoreB = <TrainB as AutodiffBackend>::InnerBackend;
-    // type InferB = NdArray<f32>;
-    type TrainB = Autodiff<NdArray<f32, i32>>;
+    // Dispatch picks the concrete backend at runtime from the config; autodiff
+    // lives in the device, so TrainB/StoreB/InferB are all the same type.
+    type TrainB = Dispatch;
     type StoreB = <TrainB as AutodiffBackend>::InnerBackend;
-    type InferB = NdArray<f32>;
-
-    // let device = WgpuDevice::default();
-    let device = NdArrayDevice::default();
-    let infer_device = NdArrayDevice::default();
+    type InferB = Dispatch;
 
     let mz_conf = MuZeroConfig::default();
     if let NetworkType::ResNet = mz_conf.network_type {
@@ -104,7 +97,12 @@ fn main() {
         );
     }
 
-    let mut agent: MlpNets<TrainB> = mz_conf.init_agent(&device);
+    // Plain device for buffer/store tensors, autodiff-wrapped for the model.
+    let device = select_device(mz_conf.training_backend);
+    let train_device = DispatchDevice::autodiff(device.clone());
+    let infer_device = select_device(mz_conf.inference_backend);
+
+    let mut agent: MlpNets<TrainB> = mz_conf.init_agent(&train_device);
     let mut optimizer = AdamConfig::new().init::<TrainB, MlpNets<TrainB>>();
 
     let inference_agent: MlpNets<InferB> = nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
@@ -193,7 +191,7 @@ fn main() {
                 &mz_conf,
                 &mut buffer,
                 mz_conf.learning_rate,
-                &device,
+                &train_device,
             );
             total_train_steps += 1;
             steps_since_inference_update += 1;

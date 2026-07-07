@@ -1,8 +1,9 @@
-use burn::backend::{NdArray, ndarray::NdArrayDevice};
+use burn::Dispatch;
 use burn::rl::Environment;
 use burn::tensor::Tensor;
 use gif::{Encoder, Frame, Repeat};
 use gym_rs::utils::renderer::{RenderColor, RenderFrame, RenderMode};
+use mz_rs::utils::select_device;
 use mz_rs::{
     agent::MlpNets, env::cartpole::env::CartPoleWrapper, mz_config::MuZeroConfig,
     search::search_serial::search,
@@ -35,14 +36,15 @@ fn save_gif(frames: &[RenderFrame], path: &str) {
 }
 
 fn main() {
-    type B = NdArray<f32>;
-    let device = NdArrayDevice::default();
+    // Backend picked at runtime from config (see BackendChoice).
+    type B = Dispatch;
 
     let mz_conf = MuZeroConfig::new::<B>("configs/config_inference.yaml");
     assert!(
         mz_conf.init_checkpoint.is_some(),
         "Set init_checkpoint in config.yaml (e.g. \"model/best\") to play from a trained model"
     );
+    let device = select_device(mz_conf.inference_backend);
     let agent: MlpNets<B> = mz_conf.init_agent(&device);
     let mut env = CartPoleWrapper::new(RenderMode::RgbArray);
     let mut rng = rand::rng();
