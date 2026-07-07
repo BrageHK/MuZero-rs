@@ -15,9 +15,9 @@ use crossbeam::channel::{Sender, unbounded};
 use mz_rs::agent::MlpNets;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
 use mz_rs::mz_config::MuZeroConfig;
-use mz_rs::search::{InferenceHandles, inference_channels, inference_master};
-use mz_rs::search::search_serial::search as search_serial;
 use mz_rs::search::search as search_parallel;
+use mz_rs::search::search_serial::search as search_serial;
+use mz_rs::search::{InferenceHandles, inference_channels, inference_master};
 use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;
 

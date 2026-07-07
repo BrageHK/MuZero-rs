@@ -55,8 +55,7 @@ pub fn search<B: Backend, N: MuZeroNets<B>>(
         Vec::<Node<B>>::with_capacity((mz_conf.num_simulations + 1) * mz_conf.action_space);
 
     // Initialize and expand root (node 0)
-    let (root_hidden_state, root_reward, root_value, root_policy) =
-        mz_agent.initial_inference(obs);
+    let (root_hidden_state, root_reward, root_value, root_policy) = mz_agent.initial_inference(obs);
     let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_noise; mz_conf.action_space]).unwrap();
     let noise = dirichlet.sample(&mut rand::rng());
     let frac = mz_conf.root_exploration_fraction;

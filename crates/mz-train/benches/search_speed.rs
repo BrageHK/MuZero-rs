@@ -9,7 +9,7 @@ use mz_rs::{agent::MlpNets, mz_config::MuZeroConfig, search::search_serial::sear
 use std::hint::black_box;
 
 // Compares MCTS search speed on the GPU (Wgpu) backend vs the CPU (NdArray)
-// backend. Search does hundreds of batch-size-1 forward passes per move. 
+// backend. Search does hundreds of batch-size-1 forward passes per move.
 // Using NdArray is significantly faster
 fn bench_search_wgpu(c: &mut Criterion) {
     type B = Wgpu<f32, i32>;

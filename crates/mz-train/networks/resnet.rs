@@ -44,7 +44,9 @@ pub struct ResNetRepresentation<B: Backend> {
 
 impl<B: Backend> ResNetRepresentation<B> {
     pub fn forward(&self, obs: Tensor<B, 4>) -> Tensor<B, 4> {
-        let mut x = self.relu.forward(self.stem_bn.forward(self.stem.forward(obs)));
+        let mut x = self
+            .relu
+            .forward(self.stem_bn.forward(self.stem.forward(obs)));
         for block in &self.blocks {
             x = block.forward(x);
         }
@@ -65,7 +67,7 @@ pub struct ResNetDynamics<B: Backend> {
 }
 
 impl<B: Backend> ResNetDynamics<B> {
-    /// Returns (hidden_state, reward). 
+    /// Returns (hidden_state, reward).
     pub fn forward(
         &self,
         hidden: Tensor<B, 4>,
@@ -80,7 +82,9 @@ impl<B: Backend> ResNetDynamics<B> {
             .expand([n, action_size, h, w]);
 
         let x = Tensor::cat(vec![hidden, action_planes], 1);
-        let mut x = self.relu.forward(self.fuse_bn.forward(self.fuse.forward(x)));
+        let mut x = self
+            .relu
+            .forward(self.fuse_bn.forward(self.fuse.forward(x)));
         for block in &self.blocks {
             x = block.forward(x);
         }
@@ -113,16 +117,19 @@ impl<B: Backend> ResNetPrediction<B> {
     pub fn forward(&self, hidden: Tensor<B, 4>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         let n = hidden.dims()[0] as i32;
 
-        let policy = self
-            .relu
-            .forward(self.policy_bn.forward(self.policy_conv.forward(hidden.clone())));
+        let policy = self.relu.forward(
+            self.policy_bn
+                .forward(self.policy_conv.forward(hidden.clone())),
+        );
         let policy = self.policy_fc.forward(policy.reshape([n, -1]));
         let policy = softmax(policy, 1);
 
         let value = self
             .relu
             .forward(self.value_bn.forward(self.value_conv.forward(hidden)));
-        let value = self.relu.forward(self.value_fc1.forward(value.reshape([n, -1])));
+        let value = self
+            .relu
+            .forward(self.value_fc1.forward(value.reshape([n, -1])));
         let value = self.value_fc2.forward(value);
 
         (value, policy)
@@ -200,9 +207,10 @@ impl<B: Backend> ResNets<B> {
 
 impl<B: Backend> MuZeroNets<B> for ResNets<B> {
     fn init(mz_conf: &MuZeroConfig, device: &B::Device) -> Self {
-        let resnet = mz_conf.resnet.as_ref().expect(
-            "network_type: ResNet requires a `resnet:` section in the config",
-        );
+        let resnet = mz_conf
+            .resnet
+            .as_ref()
+            .expect("network_type: ResNet requires a `resnet:` section in the config");
         ResNetConfig {
             obs_channels: resnet.obs_channels,
             channels: resnet.channels,

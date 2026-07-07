@@ -1,14 +1,18 @@
 use std::hint::black_box;
 use std::time::Instant;
 
-use burn::{Tensor, backend::{NdArray, Wgpu, ndarray::NdArrayDevice, wgpu::WgpuDevice}, tensor::{Distribution, Shape, Transaction}};
+use burn::{
+    Tensor,
+    backend::{NdArray, ndarray::NdArrayDevice},
+    tensor::{Distribution, Shape, Transaction},
+};
 use mz_rs::agent::MlpNets;
 use mz_rs::mz_config::MuZeroConfig;
 use mz_rs::networks::MuZeroNets;
 
 fn main() {
     // type B = Wgpu::<f32, i32>;
-    type B = NdArray::<f32>;
+    type B = NdArray<f32>;
     let device = NdArrayDevice::default();
     // let device = WgpuDevice::default();
     let mut mz_conf = MuZeroConfig::default();
@@ -20,9 +24,12 @@ fn main() {
         mz_conf.batch_size = batch_size;
         let mz_agent: MlpNets<B> = mz_conf.init(&device);
 
-
         let distribution = Distribution::Uniform(0.0, 1.0); // Any random value between 0.0 and 1.0
-        let dummy_tensor = Tensor::<B, 2>::random(Shape::new([batch_size, mz_conf.obs_dim]), distribution, &device);
+        let dummy_tensor = Tensor::<B, 2>::random(
+            Shape::new([batch_size, mz_conf.obs_dim]),
+            distribution,
+            &device,
+        );
         println!("Dummy tensor shape: {:?}", dummy_tensor.shape());
 
         let num_iterations = 100;
@@ -42,7 +49,6 @@ fn main() {
                     .expect("correct amount of tensor data"),
             );
             black_box((hidden_state, reward, value, policy));
-
         }
 
         let start_time = Instant::now();
@@ -63,6 +69,11 @@ fn main() {
             black_box((hidden_state, reward, value, policy));
         }
 
-        println!("Time: {:?}, Time per data_point: {}s, Batch size: {}", start_time.elapsed(), start_time.elapsed().as_millis() as f32 / batch_size as f32, batch_size);
+        println!(
+            "Time: {:?}, Time per data_point: {}s, Batch size: {}",
+            start_time.elapsed(),
+            start_time.elapsed().as_millis() as f32 / batch_size as f32,
+            batch_size
+        );
     }
 }

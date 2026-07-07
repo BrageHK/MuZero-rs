@@ -45,7 +45,7 @@ impl Default for QNormalization {
     }
 }
 
-/// (hidden_state, reward, value, policy) 
+/// (hidden_state, reward, value, policy)
 type InferResult<B> = (Tensor<B, 1>, f32, f32, Vec<f32>);
 type RespondTx<B> = Sender<InferResult<B>>;
 

@@ -45,7 +45,10 @@ pub struct PredictionModelConfig {
 
 impl PredictionModelConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> PredictionModel<B> {
-        assert!(self.n_layers >= 1, "prediction backbone needs at least 1 layer");
+        assert!(
+            self.n_layers >= 1,
+            "prediction backbone needs at least 1 layer"
+        );
         let mut backbone = Vec::with_capacity(self.n_layers);
         backbone.push(LinearConfig::new(self.hidden_size, self.fc_hidden_size).init(device));
         for _ in 0..self.n_layers - 1 {
