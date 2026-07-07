@@ -91,13 +91,14 @@ pub struct MuZeroConfig {
 
 impl Default for MuZeroConfig {
     fn default() -> Self {
-        let file_content = fs::read_to_string("configs/config.yaml").or_else(|_| {
-            fs::read_to_string(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../configs/config.yaml"
-            ))
-        })
-        .expect("Failed to read configs/config.yaml");
+        let file_content = fs::read_to_string("configs/config.yaml")
+            .or_else(|_| {
+                fs::read_to_string(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../configs/config.yaml"
+                ))
+            })
+            .expect("Failed to read configs/config.yaml");
         serde_yaml::from_str(&file_content).unwrap()
     }
 }
@@ -112,9 +113,8 @@ impl MuZeroConfig {
 impl MuZeroConfig {
     /// `num_search_threads`, defaulting to available cores when unset.
     pub fn search_threads(&self) -> usize {
-        self.num_search_threads.unwrap_or_else(|| {
-            std::thread::available_parallelism().map_or(1, |n| n.get())
-        })
+        self.num_search_threads
+            .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
     }
 
     /// Fresh random init of a network family, e.g. `mz_conf.init::<B, MlpNets<B>>(&device)`.
@@ -126,9 +126,9 @@ impl MuZeroConfig {
     pub fn init_agent<B: Backend, N: MuZeroNets<B>>(&self, device: &B::Device) -> N {
         let agent: N = self.init(device);
         match &self.init_checkpoint {
-            Some(path) => agent.load_file(path, &CompactRecorder::new(), device).unwrap_or_else(|e| {
-                panic!("Failed to load init_checkpoint '{path}': {e}")
-            }),
+            Some(path) => agent
+                .load_file(path, &CompactRecorder::new(), device)
+                .unwrap_or_else(|e| panic!("Failed to load init_checkpoint '{path}': {e}")),
             None => agent,
         }
     }

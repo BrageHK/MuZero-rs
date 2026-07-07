@@ -37,10 +37,7 @@ impl<B: Backend> ReplayBuffer<B> {
         self.games.push(game);
     }
 
-    pub fn sample_games(
-        &mut self,
-        mz_config: &MuZeroConfig
-    ) -> Vec<Vec<BufferData<B>>> {
+    pub fn sample_games(&mut self, mz_config: &MuZeroConfig) -> Vec<Vec<BufferData<B>>> {
         (0..mz_config.batch_size)
             .map(|_| self.sample_single(mz_config))
             .collect()
@@ -48,8 +45,14 @@ impl<B: Backend> ReplayBuffer<B> {
 
     fn sample_single(&mut self, mz_config: &MuZeroConfig) -> Vec<BufferData<B>> {
         let flat_idx = self.rng.usize(0..self.total_positions);
-        let game_idx = self.cumulative_lengths.partition_point(|&cum| cum <= flat_idx);
-        let game_start = if game_idx == 0 { 0 } else { self.cumulative_lengths[game_idx - 1] };
+        let game_idx = self
+            .cumulative_lengths
+            .partition_point(|&cum| cum <= flat_idx);
+        let game_start = if game_idx == 0 {
+            0
+        } else {
+            self.cumulative_lengths[game_idx - 1]
+        };
         let pos = flat_idx - game_start;
         let game = &self.games[game_idx];
 
@@ -89,7 +92,12 @@ impl<B: Backend> ReplayBuffer<B> {
     }
 }
 
-fn n_step_value<B: Backend>(game: &[BufferData<B>], idx: usize, n_steps: usize, discount: f32) -> f32 {
+fn n_step_value<B: Backend>(
+    game: &[BufferData<B>],
+    idx: usize,
+    n_steps: usize,
+    discount: f32,
+) -> f32 {
     let mut value = 0.0;
     for k in 0..n_steps {
         let ridx = idx + k;
@@ -139,12 +147,24 @@ mod tests {
         let mut buffer = ReplayBuffer::<B>::default();
         // Game shorter than unroll_steps: last step always absorbing
         buffer.store_game(create_game::<B>(3, &device));
-        assert_eq!(buffer.sample_games(&mz_config)[0].len(), mz_config.unroll_steps);
-        assert_eq!(buffer.sample_games(&mz_config)[0][mz_config.unroll_steps - 1].value, 0.);
-        assert_eq!(buffer.sample_games(&mz_config)[0][mz_config.unroll_steps - 1].reward, 0.);
+        assert_eq!(
+            buffer.sample_games(&mz_config)[0].len(),
+            mz_config.unroll_steps
+        );
+        assert_eq!(
+            buffer.sample_games(&mz_config)[0][mz_config.unroll_steps - 1].value,
+            0.
+        );
+        assert_eq!(
+            buffer.sample_games(&mz_config)[0][mz_config.unroll_steps - 1].reward,
+            0.
+        );
         buffer.store_game(create_game::<B>(100, &device));
         for _ in 0..4 {
-            assert_eq!(buffer.sample_games(&mz_config)[0].len(), mz_config.unroll_steps);
+            assert_eq!(
+                buffer.sample_games(&mz_config)[0].len(),
+                mz_config.unroll_steps
+            );
         }
     }
 
@@ -156,7 +176,10 @@ mod tests {
         let mut buffer = ReplayBuffer::<B>::default();
         buffer.store_game(create_game::<B>(1, &device));
         for _ in 0..3 {
-            assert_eq!(buffer.sample_games(&mz_config)[0].len(), mz_config.unroll_steps);
+            assert_eq!(
+                buffer.sample_games(&mz_config)[0].len(),
+                mz_config.unroll_steps
+            );
         }
         for i in 1..mz_config.unroll_steps {
             let sample = buffer.sample_games(&mz_config);

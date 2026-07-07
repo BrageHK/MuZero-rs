@@ -4,9 +4,8 @@ use std::thread;
 use std::time::Duration;
 
 use burn::backend::{
-    Autodiff, Wgpu,
+    Autodiff,
     ndarray::{NdArray, NdArrayDevice},
-    wgpu::WgpuDevice,
 };
 use burn::module::{AutodiffModule, Module};
 use burn::optim::AdamConfig;
@@ -108,8 +107,7 @@ fn main() {
     let mut agent: MlpNets<TrainB> = mz_conf.init_agent(&device);
     let mut optimizer = AdamConfig::new().init::<TrainB, MlpNets<TrainB>>();
 
-    let inference_agent: MlpNets<InferB> =
-        nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
+    let inference_agent: MlpNets<InferB> = nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
     let agent_cell = Arc::new(Mutex::new(inference_agent));
 
     // Single master thread: one shared model, two independently-batched
@@ -188,8 +186,8 @@ fn main() {
         }
 
         for _train_step in 0..mz_conf.train_steps_per_game {
-            let loss;
-            (agent, loss) = train(
+            let _loss;
+            (agent, _loss) = train(
                 agent,
                 &mut optimizer,
                 &mz_conf,
@@ -199,14 +197,6 @@ fn main() {
             );
             total_train_steps += 1;
             steps_since_inference_update += 1;
-            if let Some(loss) = loss {
-                // println!(
-                //     "Train step {}/{}: loss = {:.4}",
-                //     train_step + 1,
-                //     mz_conf.train_steps_per_game,
-                //     loss
-                // );
-            }
         }
 
         if steps_since_inference_update >= mz_conf.inference_update_interval {

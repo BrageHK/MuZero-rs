@@ -53,7 +53,6 @@ pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
     }
 }
 
-
 pub fn nets_to_backend<B1: Backend, B2: Backend, N1: MuZeroNets<B1>, N2: MuZeroNets<B2>>(
     nets: &N1,
     mz_conf: &MuZeroConfig,

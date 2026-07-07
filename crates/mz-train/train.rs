@@ -29,14 +29,17 @@ where
     let mut hidden_state: Option<Tensor<B, 2>> = None;
 
     for step in 0..mz_conf.unroll_steps {
+        println!("H");
         let target_value: Vec<f32> = sequence.iter().map(|game| game[step].value).collect();
         let target_value =
             Tensor::<B, 1>::from_floats(target_value.as_slice(), device).unsqueeze_dim(1);
+        println!("e");
 
         let target_policy: Vec<Tensor<B, 2>> = sequence
             .iter()
             .map(|game| Tensor::<B, 2>::from_inner(game[step].policy.clone()))
             .collect();
+        println!("l");
         let target_policy = Tensor::cat(target_policy, 0);
 
         let (new_hidden_state, reward, value, policy) = match &hidden_state {
@@ -55,8 +58,8 @@ where
                     .collect();
                 let actions = Tensor::<B, 1, Int>::from_data(actions.as_slice(), device);
                 // Appendix G: Training, trick to scale by 0.5
-                let scaled_hidden_state = prev_hidden_state.clone() * 0.5
-                    + prev_hidden_state.clone().detach() * 0.5;
+                let scaled_hidden_state =
+                    prev_hidden_state.clone() * 0.5 + prev_hidden_state.clone().detach() * 0.5;
                 agent.recurrent_inference(scaled_hidden_state, actions, mz_conf.action_space)
             }
         };
@@ -71,10 +74,8 @@ where
         loss = loss + value_loss + policy_loss;
 
         if hidden_state.is_some() {
-            let target_reward: Vec<f32> = sequence
-                .iter()
-                .map(|game| game[step - 1].reward)
-                .collect();
+            let target_reward: Vec<f32> =
+                sequence.iter().map(|game| game[step - 1].reward).collect();
             let target_reward =
                 Tensor::<B, 1>::from_floats(target_reward.as_slice(), device).unsqueeze_dim(1);
             let reward_loss = (reward - target_reward).powf_scalar(2.0).mean() / k;

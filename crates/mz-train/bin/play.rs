@@ -4,9 +4,7 @@ use burn::tensor::Tensor;
 use gif::{Encoder, Frame, Repeat};
 use gym_rs::utils::renderer::{RenderColor, RenderFrame, RenderMode};
 use mz_rs::{
-    agent::MlpNets,
-    env::cartpole::env::CartPoleWrapper,
-    mz_config::MuZeroConfig,
+    agent::MlpNets, env::cartpole::env::CartPoleWrapper, mz_config::MuZeroConfig,
     search::search_serial::search,
 };
 use rand::distr::weighted::WeightedIndex;

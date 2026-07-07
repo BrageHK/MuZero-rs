@@ -1,9 +1,10 @@
 use burn::module::AutodiffModule;
-use burn::{Dispatch, DispatchDevice};
 use burn::optim::AdamConfig;
 use burn::rl::Environment;
 use burn::tensor::Tensor;
 use burn::tensor::backend::AutodiffBackend;
+use burn::{Dispatch, DispatchDevice};
+
 use mz_rs::agent::MlpNets;
 use mz_rs::mz_config::{MuZeroConfig, NetworkType};
 use mz_rs::networks::nets_to_backend;
@@ -12,6 +13,7 @@ use mz_rs::search::search_serial::search;
 use mz_rs::train::train;
 use mz_rs::utils::select_device;
 use mz_rs::{env::cartpole::env::CartPoleWrapper, replay_buffer::ReplayBuffer};
+
 use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;
 
@@ -50,7 +52,6 @@ fn main() {
     let mut tau_idx = 0usize;
     let mut tau = mz_conf.temperature_schedule[tau_idx].tau;
 
-
     for training_step in 0..mz_conf.total_steps {
         game_len += 1;
         let s = env.state().state;
@@ -59,15 +60,18 @@ fn main() {
         let obs_store = Tensor::<StoreB, 2>::from_floats(obs_floats, &device);
 
         match mz_conf.temperature_schedule[tau_idx].step {
-            Some(n) => if training_step > n {
-                tau_idx += 1;
-                tau = mz_conf.temperature_schedule[tau_idx].tau;
-            },
+            Some(n) => {
+                if training_step > n {
+                    tau_idx += 1;
+                    tau = mz_conf.temperature_schedule[tau_idx].tau;
+                }
+            }
             None => (),
         }
 
-        let (visit_distribution, value, _action) =
-            search(obs, &mz_conf, &inference_agent, tau);
+        println!("Hello search");
+        let (visit_distribution, value, _action) = search(obs, &mz_conf, &inference_agent, tau);
+        println!("bye search");
         let dist = WeightedIndex::new(&visit_distribution).unwrap();
         let action = dist.sample(&mut rand::rng());
 
@@ -93,9 +97,9 @@ fn main() {
             println!("N games: {}", buffer.games.len());
 
             for train_step in 0..mz_conf.train_steps_per_game {
-                let loss;
-                print!("Training!");
-                (agent, loss) = train(
+                print!("Training step: {train_step}");
+                let _loss;
+                (agent, _loss) = train(
                     agent,
                     &mut optimizer,
                     &mz_conf,
@@ -103,14 +107,6 @@ fn main() {
                     mz_conf.learning_rate,
                     &train_device,
                 );
-                // if let Some(loss) = loss {
-                //     println!(
-                //         "Train step {}/{}: loss = {:.4}",
-                //         train_step + 1,
-                //         mz_conf.train_steps_per_game,
-                //         loss
-                //     );
-                // }
             }
             inference_agent = nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
         }

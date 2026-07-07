@@ -3,23 +3,21 @@
 network_type: Linear # Linear, ResNet
 environment: CartPole # CartPole, TicTacToe, Othello
 
-# n_layers semantics: representation = total Linear layers (in/out projections
-# included); dynamic/prediction = backbone Linear layers (heads are fixed).
+# Only for MLP
 representation:
     latent_space_dims: 8
     fc_hidden_size: 8
-    n_layers: 3
+    n_layers: 2
 dynamic:
     latent_space_dims: 8
     fc_hidden_size: 8
-    n_layers: 3
+    n_layers: 2
 prediction:
     latent_space_dims: 8
     fc_hidden_size: 8
     n_layers: 2
 
-# Only read when network_type: ResNet. Obs arrives flat as
-# [N, obs_channels * board_height * board_width]; ResNets reshapes internally.
+# Only relevant when choosing ResNet above
 resnet:
     obs_channels: 3
     channels: 32

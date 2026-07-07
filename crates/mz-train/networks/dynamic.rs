@@ -51,7 +51,10 @@ pub struct DynamicModelConfig {
 
 impl DynamicModelConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> DynamicModelMLP<B> {
-        assert!(self.n_layers >= 1, "dynamic backbone needs at least 1 layer");
+        assert!(
+            self.n_layers >= 1,
+            "dynamic backbone needs at least 1 layer"
+        );
         let mut backbone = Vec::with_capacity(self.n_layers);
         backbone.push(LinearConfig::new(self.hidden_input, self.fc_hidden_size).init(device));
         for _ in 0..self.n_layers - 1 {
