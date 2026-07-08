@@ -4042,6 +4042,7 @@ dependencies = [
  "gym-rs",
  "rand 0.10.1",
  "rand_distr 0.6.0",
+ "rayon",
  "sdl2",
  "serde",
  "serde_yaml",

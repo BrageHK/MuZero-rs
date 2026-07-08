@@ -1,4 +1,3 @@
-mod node;
 pub mod search_batched;
 pub mod search_parallel;
 pub mod search_serial;

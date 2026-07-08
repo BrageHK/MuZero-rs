@@ -28,6 +28,7 @@ gif = "0.14.2"
 gym-rs = { version = "0.3.1", branch = "main", git = "https://github.com/MathisWellmann/gym-rs", default-features = false }
 rand = { workspace = true }
 rand_distr = { workspace = true }
+rayon = "1.12.0"
 sdl2 = { version = "0.37", features = ["gfx", "use-pkgconfig"] }
 serde = { workspace = true }
 serde_yaml = "0.9.34"

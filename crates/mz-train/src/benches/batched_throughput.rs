@@ -14,7 +14,7 @@ use mz_rs::search::batched_search;
 use mz_rs::utils::select_device;
 use std::hint::black_box;
 
-const BATCH_SIZES: [usize; 6] = [32, 64, 128, 256, 512, 1024];
+const BATCH_SIZES: [usize; 5] = [32, 64, 128, 256, 512];
 const NUM_SIMULATIONS: usize = 200;
 const BOARD: usize = 8;
 const OBS_CHANNELS: usize = 3;

@@ -5,7 +5,7 @@ use burn::{
 use rand_distr::{Distribution, multi::Dirichlet};
 
 use crate::networks::MuZeroNets;
-use crate::{mz_config::MuZeroConfig, search::node::Node, utils::QNormalization};
+use crate::{mz_config::MuZeroConfig, utils::QNormalization};
 
 pub struct SearchReturn {
     pub distribution: Vec<f32>,
@@ -13,12 +13,16 @@ pub struct SearchReturn {
     pub best_action: usize,
 }
 
-/// Runs one MCTS per row of `observations`, batching every network call
-/// across the trees. All observations should be on the same device.
-///
-/// Each simulation step does exactly one `recurrent_inference` with batch
-/// size = number of trees, and one `Transaction` to move rewards, values
-/// and policies to the host. Hidden states stay on the device.
+struct BatchNode {
+    visits: usize,
+    action: usize,
+    hidden_row: usize,
+    first_child: usize,
+    cumulative_value: f32,
+    reward: f32,
+    policy: f32,
+}
+
 pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     observations: Tensor<B, 2>,
     mz_conf: &MuZeroConfig,
@@ -33,11 +37,10 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     let mut norms: Vec<QNormalization> =
         (0..batch_size).map(|_| QNormalization::default()).collect();
 
-    let mut node_batch: Vec<Vec<Node<B>>> = (0..batch_size)
+    let mut node_batch: Vec<Vec<BatchNode>> = (0..batch_size)
         .map(|_| Vec::with_capacity((mz_conf.num_simulations + 1) * action_space))
         .collect();
 
-    // Initialize and expand root nodes
     let (root_hidden_states, root_rewards, root_values, root_policies) =
         mz_agent.initial_inference(observations);
     let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_noise; action_space]).unwrap();
@@ -45,6 +48,14 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         .map(|_| dirichlet.sample(&mut rand::rng()))
         .collect();
     let frac = mz_conf.root_exploration_fraction;
+
+    let hidden_dim = root_hidden_states.dims()[1];
+    let mut arena = Tensor::<B, 2>::zeros(
+        [(mz_conf.num_simulations + 1) * batch_size, hidden_dim],
+        &device,
+    );
+    arena = arena.slice_assign([0..batch_size], root_hidden_states);
+    let mut arena_len = batch_size;
 
     let [root_rewards, root_values, root_policies] = Transaction::default()
         .register(root_rewards)
@@ -59,11 +70,11 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     let root_policies = root_policies.into_vec::<f32>().unwrap();
 
     for i in 0..batch_size {
-        node_batch[i].push(Node {
+        node_batch[i].push(BatchNode {
             visits: 1,
             action: 0, // This action is irrelevant
-            hidden_state: Some(root_hidden_states.clone().slice([i..i + 1]).squeeze_dim(0)),
-            children: (1..=action_space).collect(),
+            hidden_row: i,
+            first_child: 1,
             cumulative_value: root_values[i],
             reward: root_rewards[i],
             policy: 0.,
@@ -71,58 +82,61 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
 
         let policy_row = &root_policies[i * action_space..(i + 1) * action_space];
         for (action, &policy) in policy_row.iter().enumerate() {
-            node_batch[i].push(Node {
+            node_batch[i].push(BatchNode {
                 visits: 0,
                 action,
-                hidden_state: None,
+                hidden_row: 0,
+                first_child: 0,
                 cumulative_value: 0.,
                 reward: 0.,
-                children: Vec::new(),
                 policy: (1.0 - frac) * policy + frac * noise_batch[i][action],
             });
         }
     }
 
+    let mut path_batch: Vec<Vec<usize>> = (0..batch_size).map(|_| Vec::new()).collect();
+    let mut parent_rows: Vec<i64> = Vec::with_capacity(batch_size);
+    let mut actions: Vec<i64> = Vec::with_capacity(batch_size);
+
     for _sim_step in 0..mz_conf.num_simulations {
         // Selection: PUCT walk in every tree, all on host
-        let mut path_batch = Vec::with_capacity(batch_size);
-        let mut parent_hs_batch = Vec::with_capacity(batch_size);
-        let mut actions = Vec::with_capacity(batch_size);
+        parent_rows.clear();
+        actions.clear();
 
         for i in 0..batch_size {
             let nodes = &node_batch[i];
             let norm = &mut norms[i];
 
             let mut curr_node_idx = 0;
-            let mut path = vec![0usize];
+            let path = &mut path_batch[i];
+            path.clear();
+            path.push(0);
             loop {
                 let curr_node = &nodes[curr_node_idx];
-                if curr_node.children.is_empty() {
+                if curr_node.first_child == 0 {
                     // Unexpanded leaf, go to expansion
                     break;
                 }
 
+                // compute it once per node instead of once per child.
                 let parent_visits = curr_node.visits;
+                let exploration = exploration_factor(parent_visits);
 
                 // Find the best child
                 let mut best_puct = f32::NEG_INFINITY;
                 let mut best_node = 0usize;
-                for child_idx in &curr_node.children {
-                    let child = &nodes[*child_idx];
+                for child_idx in curr_node.first_child..curr_node.first_child + action_space {
+                    let child = &nodes[child_idx];
                     let q_value = match child.visits {
                         0 => 0.,
                         _ => norm.get_q(child.cumulative_value / child.visits as f32),
                     };
-                    let puct_value = puct(
-                        q_value,
-                        child.policy,
-                        parent_visits as i32,
-                        child.visits as i32,
-                    );
+                    let puct_value = q_value + child.policy * exploration
+                        / (1 + child.visits) as f32;
 
                     if puct_value > best_puct {
                         best_puct = puct_value;
-                        best_node = *child_idx;
+                        best_node = child_idx;
                     }
                 }
 
@@ -133,21 +147,20 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
             let [.., parent_idx, leaf_idx] = path.as_slice() else {
                 unreachable!()
             };
-            let parent_hs = match &node_batch[i][*parent_idx].hidden_state {
-                Some(hs) => hs.clone(),
-                None => panic!("Parent node has no hidden state!"),
-            };
-            parent_hs_batch.push(parent_hs);
-            actions.push(node_batch[i][*leaf_idx].action as i64);
-            path_batch.push(path);
+            parent_rows.push(nodes[*parent_idx].hidden_row as i64);
+            actions.push(nodes[*leaf_idx].action as i64);
         }
 
         // Expansion: one recurrent_inference for all trees
-        let hidden_batch = Tensor::stack::<2>(parent_hs_batch, 0);
+        let row_tensor =
+            Tensor::<B, 1, Int>::from_data(TensorData::from(parent_rows.as_slice()), &device);
+        let hidden_batch = arena.clone().select(0, row_tensor);
         let action_tensor =
             Tensor::<B, 1, Int>::from_data(TensorData::from(actions.as_slice()), &device);
         let (new_hs, new_rewards, new_values, new_policies) =
             mz_agent.recurrent_inference(hidden_batch, action_tensor, action_space);
+
+        arena = arena.slice_assign([arena_len..arena_len + batch_size], new_hs);
 
         let [new_rewards, new_values, new_policies] = Transaction::default()
             .register(new_rewards)
@@ -169,21 +182,21 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
             let nodes_len = nodes.len();
             let policy_row = &new_policies[i * action_space..(i + 1) * action_space];
             for (action, &policy) in policy_row.iter().enumerate() {
-                nodes.push(Node {
+                nodes.push(BatchNode {
                     visits: 0,
                     action,
-                    hidden_state: None,
+                    hidden_row: 0,
+                    first_child: 0,
                     cumulative_value: 0.,
                     reward: 0.,
-                    children: Vec::new(),
                     policy,
                 });
             }
 
             let leaf = &mut nodes[leaf_idx];
-            leaf.hidden_state = Some(new_hs.clone().slice([i..i + 1]).squeeze_dim(0));
+            leaf.hidden_row = arena_len + i;
             leaf.reward = new_rewards[i];
-            leaf.children = (nodes_len..nodes_len + action_space).collect();
+            leaf.first_child = nodes_len;
 
             // Backprop: walk path from leaf to root, accumulate discounted returns
             let mut back_value = new_values[i];
@@ -194,6 +207,8 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
                 back_value = curr_node.reward + discount * back_value;
             }
         }
+
+        arena_len += batch_size;
     }
 
     (0..batch_size)
@@ -201,20 +216,17 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         .collect()
 }
 
-fn extract_result<B: Backend>(nodes: &[Node<B>], action_space: usize, tau: f32) -> SearchReturn {
+fn extract_result(nodes: &[BatchNode], action_space: usize, tau: f32) -> SearchReturn {
     let root_node = &nodes[0];
     let value = root_node.cumulative_value / (root_node.visits as f32);
     let mut visit_distribution = vec![0.0f32; action_space];
+    let children = root_node.first_child..root_node.first_child + action_space;
 
     if tau == 0.0 {
-        let best_child_idx = root_node
-            .children
-            .iter()
-            .max_by_key(|child_idx| nodes[**child_idx].visits);
-        let best_action = match best_child_idx {
-            Some(child_idx) => nodes[*child_idx].action,
-            None => panic!("There are no child nodes."),
-        };
+        let best_child_idx = children
+            .max_by_key(|child_idx| nodes[*child_idx].visits)
+            .expect("There are no child nodes.");
+        let best_action = nodes[best_child_idx].action;
         visit_distribution[best_action] = 1.0;
         SearchReturn {
             distribution: visit_distribution,
@@ -222,16 +234,15 @@ fn extract_result<B: Backend>(nodes: &[Node<B>], action_space: usize, tau: f32) 
             best_action,
         }
     } else {
-        let visit_sum: f32 = root_node
-            .children
-            .iter()
-            .map(|child_idx| (nodes[*child_idx].visits as f32).powf(1.0 / tau))
+        let visit_sum: f32 = children
+            .clone()
+            .map(|child_idx| (nodes[child_idx].visits as f32).powf(1.0 / tau))
             .sum();
         let mut highest_visits = 0;
         let mut best_action = 0;
-        for child_idx in &root_node.children {
-            let action = nodes[*child_idx].action;
-            let child_visits = nodes[*child_idx].visits;
+        for child_idx in children {
+            let action = nodes[child_idx].action;
+            let child_visits = nodes[child_idx].visits;
             if child_visits > highest_visits {
                 highest_visits = child_visits;
                 best_action = action;
@@ -246,12 +257,11 @@ fn extract_result<B: Backend>(nodes: &[Node<B>], action_space: usize, tau: f32) 
     }
 }
 
-fn puct(q_value: f32, prior: f32, parent_visits: i32, child_visits: i32) -> f32 {
+fn exploration_factor(parent_visits: usize) -> f32 {
     let c1: f32 = 1.25;
-    let c2: i32 = 19652;
-    q_value
-        + prior * (parent_visits as f32).sqrt() / (1 + child_visits) as f32
-            * (c1 + ((parent_visits + c2 + 1) as f32 / c2 as f32).ln())
+    let c2: f32 = 19652.;
+    let pv = parent_visits as f32;
+    pv.sqrt() * (c1 + ((pv + c2 + 1.) / c2).ln())
 }
 
 #[cfg(all(test, feature = "ndarray"))]
