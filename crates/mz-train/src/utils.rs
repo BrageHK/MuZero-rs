@@ -1,6 +1,8 @@
 use burn::DispatchDevice;
 use serde::{Deserialize, Serialize};
 
+use crate::mz_config::TemperatureSchedule;
+
 /// Backend selected at runtime from config. A variant is only available when
 /// the matching cargo feature compiled that backend in (see `[features]` in
 /// Cargo.toml). picking a backend that wasn't compiled in panics with a hint.
@@ -68,5 +70,40 @@ pub fn select_device(choice: BackendChoice) -> DispatchDevice {
             "backend {other:?} not compiled in — rebuild with the matching cargo feature, \
              e.g. `cargo build --features cuda`"
         ),
+    }
+}
+
+pub fn tau_for_step(schedule: &[TemperatureSchedule], step: usize) -> f32 {
+    for entry in schedule {
+        match entry.step {
+            Some(threshold) if step <= threshold => return entry.tau,
+            None => return entry.tau,
+            _ => {}
+        }
+    }
+    schedule.last().map(|e| e.tau).unwrap_or(1.0)
+}
+
+pub struct QNormalization {
+    q_max: f32,
+    q_min: f32,
+}
+
+impl QNormalization {
+    pub fn get_q(&mut self, q_value: f32) -> f32 {
+        self.q_max = self.q_max.max(q_value);
+        self.q_min = self.q_min.min(q_value);
+        let epsilon = 0.001;
+
+        (q_value - self.q_min) / (self.q_max - self.q_min + epsilon)
+    }
+}
+
+impl Default for QNormalization {
+    fn default() -> Self {
+        QNormalization {
+            q_max: f32::NEG_INFINITY,
+            q_min: f32::INFINITY,
+        }
     }
 }

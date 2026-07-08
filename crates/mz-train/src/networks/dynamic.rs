@@ -31,13 +31,14 @@ impl<B: Backend> DynamicModelMLP<B> {
         // `hidden` is autodiff-tracked (e.g. training on the rocm backend).
         let batch_size = hidden.dims()[0];
         let device = hidden.device();
-        let action_idx = action.into_data().to_vec::<i32>().unwrap();
+        // convert() first: the backend's int repr may be I32 or I64.
+        let action_idx = action.into_data().convert::<i64>().to_vec::<i64>().unwrap();
         let mut one_hot = vec![0f32; batch_size * action_size];
         for (row, &a) in action_idx.iter().enumerate() {
             one_hot[row * action_size + a as usize] = 1.0;
         }
-        let action_one_hot =
-            Tensor::<B, 1>::from_floats(one_hot.as_slice(), &device).reshape([batch_size, action_size]);
+        let action_one_hot = Tensor::<B, 1>::from_floats(one_hot.as_slice(), &device)
+            .reshape([batch_size, action_size]);
 
         let mut x = Tensor::cat(vec![hidden, action_one_hot], 1);
         for layer in &self.backbone {

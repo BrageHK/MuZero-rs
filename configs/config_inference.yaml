@@ -29,8 +29,8 @@ resnet:
 # Compute backends. Must be compiled in via cargo features (see crates/mz-train/Cargo.toml).
 # Options: auto, cuda, rocm, metal, vulkan, wgpu, flex, ndarray, libtorch, libtorch-gpu
 # auto = best compiled-in backend (cuda > metal > rocm > vulkan > wgpu > libtorch > flex > ndarray)
-training_backend: rocm # wgpu
-inference_backend: rocm # ndarray
+training_backend: ndarray # wgpu
+inference_backend: ndarray # ndarray
 
 # Environment
 action_space: 2
@@ -39,10 +39,10 @@ obs_dim: 4
 # Training + algorithm
 n_steps: 10
 unroll_steps: 5
-batch_size: 256
+batch_size: 32
 discount: 0.997
 learning_rate: 0.001
-num_simulations: 200
+num_simulations: 50
 train_steps_per_game: 10
 inference_update_interval: 100 # update inference network every N training steps
 checkpoint_interval: 10000 # save network checkpoint to model/ every N environment steps
@@ -59,12 +59,12 @@ temperature_schedule:
       tau: 0.25
 
 # Parallel settings
-max_thread_wait: 0.01
-num_search_threads: 256 # Defaults to available cores
-init_batch_size: 256
-rec_batch_size: 256
+max_thread_wait: 0.5
+num_search_threads: 32 # Defaults to available cores
+init_batch_size: 32
+rec_batch_size: 32
 
 # Optional: checkpoint under model/ to init agent from (path w/o .mpk ext, e.g. "model/latest" or "model/best").
 # null/omitted = fresh random init.
 # NOTE: old checkpoints predate the Vec<Linear> refactor (param paths changed) and no longer load.
-init_checkpoint: null
+init_checkpoint: "model/latest.mpk"

@@ -13,25 +13,14 @@ use burn::{Dispatch, DispatchDevice};
 use crossbeam::channel::{Sender, unbounded};
 use mz_rs::agent::MlpNets;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
-use mz_rs::mz_config::{MuZeroConfig, NetworkType, TemperatureSchedule};
+use mz_rs::mz_config::{MuZeroConfig, NetworkType};
 use mz_rs::networks::nets_to_backend;
 use mz_rs::replay_buffer::{BufferData, ReplayBuffer};
 use mz_rs::search::{InferenceHandles, inference_channels, inference_master, search};
 use mz_rs::train::train;
-use mz_rs::utils::select_device;
+use mz_rs::utils::{select_device, tau_for_step};
 use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;
-
-fn tau_for_step(schedule: &[TemperatureSchedule], step: usize) -> f32 {
-    for entry in schedule {
-        match entry.step {
-            Some(threshold) if step <= threshold => return entry.tau,
-            None => return entry.tau,
-            _ => {}
-        }
-    }
-    schedule.last().map(|e| e.tau).unwrap_or(1.0)
-}
 
 /// One self-play worker: owns its own game and its own tree per move, talks
 /// to the shared inference master thread for every NN call.

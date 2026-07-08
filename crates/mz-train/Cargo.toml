@@ -3,35 +3,9 @@ name = "mz-train"
 version.workspace = true
 edition.workspace = true
 
-# Sources live at the crate root (not src/), so lib/bin paths are explicit.
 # Lib name stays `mz_rs` because bins and benches import `use mz_rs::...`.
 [lib]
 name = "mz_rs"
-path = "lib.rs"
-
-[[bin]]
-name = "train"
-path = "bin/train.rs"
-
-[[bin]]
-name = "train_parallel"
-path = "bin/train_parallel.rs"
-
-[[bin]]
-name = "play"
-path = "bin/play.rs"
-
-[[bin]]
-name = "run_env"
-path = "bin/run_env.rs"
-
-[[bin]]
-name = "batch_speed_test"
-path = "bin/batch_speed_test.rs"
-
-[[bin]]
-name = "parallel_games_test"
-path = "bin/parallel_games_test.rs"
 
 [dependencies]
 burn = { workspace = true, features = [
@@ -75,8 +49,15 @@ criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [[bench]]
 name = "search_speed"
+path = "src/benches/search_speed.rs"
 harness = false
 
 [[bench]]
 name = "throughput"
+path = "src/benches/throughput.rs"
+harness = false
+
+[[bench]]
+name = "batched_throughput"
+path = "src/benches/batched_throughput.rs"
 harness = false
