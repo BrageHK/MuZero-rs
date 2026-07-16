@@ -3,6 +3,7 @@ use burn::{
     tensor::{Int, TensorData, Transaction, backend::Backend},
 };
 use rand_distr::{Distribution, multi::Dirichlet};
+use rayon::prelude::*;
 
 use crate::networks::MuZeroNets;
 use crate::{mz_config::MuZeroConfig, utils::QNormalization};
@@ -25,6 +26,7 @@ struct BatchNode {
 
 pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     observations: Tensor<B, 2>,
+    legal_masks: Option<&[Vec<bool>]>,
     mz_conf: &MuZeroConfig,
     mz_agent: &N,
     tau: f32,
@@ -32,7 +34,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     let batch_size = observations.dims()[0];
     let device = observations.device();
     let discount = mz_conf.discount;
-    let action_space = mz_conf.action_space;
+    let action_space = mz_conf.action_space();
 
     let mut norms: Vec<QNormalization> =
         (0..batch_size).map(|_| QNormalization::default()).collect();
@@ -43,10 +45,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
 
     let (root_hidden_states, root_rewards, root_values, root_policies) =
         mz_agent.initial_inference(observations);
-    let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_noise; action_space]).unwrap();
-    let noise_batch: Vec<_> = (0..batch_size)
-        .map(|_| dirichlet.sample(&mut rand::rng()))
-        .collect();
+    let alpha = mz_conf.dirichlet_noise;
     let frac = mz_conf.root_exploration_fraction;
 
     let hidden_dim = root_hidden_states.dims()[1];
@@ -69,87 +68,93 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     let root_values = root_values.into_vec::<f32>().unwrap();
     let root_policies = root_policies.into_vec::<f32>().unwrap();
 
-    for i in 0..batch_size {
-        node_batch[i].push(BatchNode {
-            visits: 1,
-            action: 0, // This action is irrelevant
-            hidden_row: i,
-            first_child: 1,
-            cumulative_value: root_values[i],
-            reward: root_rewards[i],
-            policy: 0.,
-        });
-
-        let policy_row = &root_policies[i * action_space..(i + 1) * action_space];
-        for (action, &policy) in policy_row.iter().enumerate() {
-            node_batch[i].push(BatchNode {
-                visits: 0,
-                action,
-                hidden_row: 0,
-                first_child: 0,
-                cumulative_value: 0.,
-                reward: 0.,
-                policy: (1.0 - frac) * policy + frac * noise_batch[i][action],
+    node_batch
+        .par_iter_mut()
+        .with_min_len(mz_conf.min_rayon_threads)
+        .enumerate()
+        .for_each(|(i, nodes)| {
+            nodes.push(BatchNode {
+                visits: 1,
+                action: 0, // This action is irrelevant
+                hidden_row: i,
+                first_child: 1,
+                cumulative_value: root_values[i],
+                reward: root_rewards[i],
+                policy: 0.,
             });
-        }
-    }
+
+            let policy_row = &root_policies[i * action_space..(i + 1) * action_space];
+            let mask = legal_masks.map(|masks| masks[i].as_slice());
+            let priors = root_priors(policy_row, mask, alpha, frac);
+            for (action, &policy) in priors.iter().enumerate() {
+                nodes.push(BatchNode {
+                    visits: 0,
+                    action,
+                    hidden_row: 0,
+                    first_child: 0,
+                    cumulative_value: 0.,
+                    reward: 0.,
+                    policy,
+                });
+            }
+        });
 
     let mut path_batch: Vec<Vec<usize>> = (0..batch_size).map(|_| Vec::new()).collect();
     let mut parent_rows: Vec<i64> = Vec::with_capacity(batch_size);
     let mut actions: Vec<i64> = Vec::with_capacity(batch_size);
 
     for _sim_step in 0..mz_conf.num_simulations {
-        // Selection: PUCT walk in every tree, all on host
-        parent_rows.clear();
-        actions.clear();
-
-        for i in 0..batch_size {
-            let nodes = &node_batch[i];
-            let norm = &mut norms[i];
-
-            let mut curr_node_idx = 0;
-            let path = &mut path_batch[i];
-            path.clear();
-            path.push(0);
-            loop {
-                let curr_node = &nodes[curr_node_idx];
-                if curr_node.first_child == 0 {
-                    // Unexpanded leaf, go to expansion
-                    break;
-                }
-
-                // compute it once per node instead of once per child.
-                let parent_visits = curr_node.visits;
-                let exploration = exploration_factor(parent_visits);
-
-                // Find the best child
-                let mut best_puct = f32::NEG_INFINITY;
-                let mut best_node = 0usize;
-                for child_idx in curr_node.first_child..curr_node.first_child + action_space {
-                    let child = &nodes[child_idx];
-                    let q_value = match child.visits {
-                        0 => 0.,
-                        _ => norm.get_q(child.cumulative_value / child.visits as f32),
-                    };
-                    let puct_value = q_value + child.policy * exploration
-                        / (1 + child.visits) as f32;
-
-                    if puct_value > best_puct {
-                        best_puct = puct_value;
-                        best_node = child_idx;
+        node_batch
+            .par_iter()
+            .zip(norms.par_iter_mut())
+            .zip(path_batch.par_iter_mut())
+            .with_min_len(mz_conf.min_rayon_threads)
+            .map(|((nodes, norm), path)| {
+                let mut curr_node_idx = 0;
+                path.clear();
+                path.push(0);
+                loop {
+                    let curr_node = &nodes[curr_node_idx];
+                    if curr_node.first_child == 0 {
+                        // Unexpanded leaf, go to expansion
+                        break;
                     }
+
+                    // compute it once per node instead of once per child.
+                    let parent_visits = curr_node.visits;
+                    let exploration = exploration_factor(parent_visits);
+
+                    // Find the best child
+                    let mut best_puct = f32::NEG_INFINITY;
+                    let mut best_node = 0usize;
+                    for child_idx in curr_node.first_child..curr_node.first_child + action_space {
+                        let child = &nodes[child_idx];
+                        let q_value = match child.visits {
+                            0 => 0.,
+                            _ => norm.get_q(child.cumulative_value / child.visits as f32),
+                        };
+                        let puct_value =
+                            q_value + child.policy * exploration / (1 + child.visits) as f32;
+
+                        if puct_value > best_puct {
+                            best_puct = puct_value;
+                            best_node = child_idx;
+                        }
+                    }
+
+                    curr_node_idx = best_node;
+                    path.push(curr_node_idx);
                 }
 
-                curr_node_idx = best_node;
-                path.push(curr_node_idx);
-            }
-
-            let [.., parent_idx, leaf_idx] = path.as_slice() else {
-                unreachable!()
-            };
-            parent_rows.push(nodes[*parent_idx].hidden_row as i64);
-            actions.push(nodes[*leaf_idx].action as i64);
-        }
+                let [.., parent_idx, leaf_idx] = path.as_slice() else {
+                    unreachable!()
+                };
+                (
+                    nodes[*parent_idx].hidden_row as i64,
+                    nodes[*leaf_idx].action as i64,
+                )
+            })
+            .unzip_into_vecs(&mut parent_rows, &mut actions);
 
         // Expansion: one recurrent_inference for all trees
         let row_tensor =
@@ -174,39 +179,43 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         let new_values = new_values.into_vec::<f32>().unwrap();
         let new_policies = new_policies.into_vec::<f32>().unwrap();
 
-        for i in 0..batch_size {
-            let nodes = &mut node_batch[i];
-            let path = &path_batch[i];
-            let leaf_idx = *path.last().unwrap();
+        // Expansion + backprop, one rayon task per tree
+        node_batch
+            .par_iter_mut()
+            .zip(path_batch.par_iter())
+            .with_min_len(mz_conf.min_rayon_threads)
+            .enumerate()
+            .for_each(|(i, (nodes, path))| {
+                let leaf_idx = *path.last().unwrap();
 
-            let nodes_len = nodes.len();
-            let policy_row = &new_policies[i * action_space..(i + 1) * action_space];
-            for (action, &policy) in policy_row.iter().enumerate() {
-                nodes.push(BatchNode {
-                    visits: 0,
-                    action,
-                    hidden_row: 0,
-                    first_child: 0,
-                    cumulative_value: 0.,
-                    reward: 0.,
-                    policy,
-                });
-            }
+                let nodes_len = nodes.len();
+                let policy_row = &new_policies[i * action_space..(i + 1) * action_space];
+                for (action, &policy) in policy_row.iter().enumerate() {
+                    nodes.push(BatchNode {
+                        visits: 0,
+                        action,
+                        hidden_row: 0,
+                        first_child: 0,
+                        cumulative_value: 0.,
+                        reward: 0.,
+                        policy,
+                    });
+                }
 
-            let leaf = &mut nodes[leaf_idx];
-            leaf.hidden_row = arena_len + i;
-            leaf.reward = new_rewards[i];
-            leaf.first_child = nodes_len;
+                let leaf = &mut nodes[leaf_idx];
+                leaf.hidden_row = arena_len + i;
+                leaf.reward = new_rewards[i];
+                leaf.first_child = nodes_len;
 
-            // Backprop: walk path from leaf to root, accumulate discounted returns
-            let mut back_value = new_values[i];
-            for &node_idx in path.iter().rev() {
-                let curr_node = &mut nodes[node_idx];
-                curr_node.visits += 1;
-                curr_node.cumulative_value += back_value;
-                back_value = curr_node.reward + discount * back_value;
-            }
-        }
+                // Backprop: walk path from leaf to root, accumulate discounted returns
+                let mut back_value = new_values[i];
+                for &node_idx in path.iter().rev() {
+                    let curr_node = &mut nodes[node_idx];
+                    curr_node.visits += 1;
+                    curr_node.cumulative_value += back_value;
+                    back_value = curr_node.reward + discount * back_value;
+                }
+            });
 
         arena_len += batch_size;
     }

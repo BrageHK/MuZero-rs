@@ -4,18 +4,20 @@ network_type: Linear # Linear, ResNet
 environment: CartPole # CartPole, TicTacToe, Othello
 
 # Only for MLP
-representation:
-    latent_space_dims: 8
-    fc_hidden_size: 8
-    n_layers: 2
-dynamic:
-    latent_space_dims: 8
-    fc_hidden_size: 8
-    n_layers: 2
-prediction:
-    latent_space_dims: 8
-    fc_hidden_size: 8
-    n_layers: 2
+# This config learns CartPole in a few minutes on CPU only
+linear:
+    representation:
+        latent_space_dims: 4
+        fc_hidden_size: 8
+        n_layers: 2
+    dynamic:
+        latent_space_dims: 4
+        fc_hidden_size: 8
+        n_layers: 2
+    prediction:
+        latent_space_dims: 4
+        fc_hidden_size: 8
+        n_layers: 2
 
 # Only relevant when choosing ResNet above
 resnet:
@@ -29,22 +31,18 @@ resnet:
 # Compute backends. Must be compiled in via cargo features (see crates/mz-train/Cargo.toml).
 # Options: auto, cuda, rocm, metal, vulkan, wgpu, flex, ndarray, libtorch, libtorch-gpu
 # auto = best compiled-in backend (cuda > metal > rocm > vulkan > wgpu > libtorch > flex > ndarray)
-training_backend: rocm # wgpu
-inference_backend: rocm # ndarray
-
-# Environment
-action_space: 2
-obs_dim: 4 
+training_backend: ndarray # wgpu
+inference_backend: ndarray # ndarray
 
 # Training + algorithm
 n_steps: 10
 unroll_steps: 5
-batch_size: 256
+batch_size: 32
 discount: 0.997
 learning_rate: 0.001
-num_simulations: 200
-train_steps_per_game: 10
-inference_update_interval: 100 # update inference network every N training steps
+train_ratio: 2
+num_simulations: 35
+inference_update_interval: 1000 # update inference network every N training steps
 checkpoint_interval: 10000 # save network checkpoint to model/ every N environment steps
 dirichlet_noise: 1
 root_exploration_fraction: 0.25
@@ -52,9 +50,9 @@ total_steps: 1000000
 
 temperature_schedule:
     - step: 500000
-      tau: 0.5
+      tau: 1.0
     - step: 750000
-      tau: 0.3
+      tau: 0.5
     - step: null   # remaining steps
       tau: 0.25
 
@@ -63,6 +61,7 @@ max_thread_wait: 0.01
 num_search_threads: 256 # Defaults to available cores
 init_batch_size: 256
 rec_batch_size: 256
+min_rayon_threads: 1
 
 # Optional: checkpoint under model/ to init agent from (path w/o .mpk ext, e.g. "model/latest" or "model/best").
 # null/omitted = fresh random init.

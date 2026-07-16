@@ -31,7 +31,7 @@ fn resnet_config(mz_conf: &MuZeroConfig) -> ResNetConfig {
         n_blocks: resnet.n_blocks,
         board_height: resnet.board_height,
         board_width: resnet.board_width,
-        action_space: mz_conf.action_space,
+        action_space: mz_conf.action_space(),
         fc_hidden_size: resnet.fc_hidden_size,
     }
 }
@@ -140,7 +140,7 @@ fn main() {
         "linear ndarray (cpu)",
         &cpu_device,
         &mlp_cpu_nets,
-        mz_conf.obs_dim,
+        mz_conf.obs_dim(),
         &cpu_batch_sizes,
     );
 
@@ -165,7 +165,7 @@ fn main() {
             "linear rocm (gpu)",
             &gpu_device,
             &mlp_gpu_nets,
-            mz_conf.obs_dim,
+            mz_conf.obs_dim(),
             &gpu_batch_sizes,
         );
         print_comparison("linear", &mlp_cpu_results, &mlp_gpu_results);

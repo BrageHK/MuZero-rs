@@ -25,7 +25,7 @@ fn main() {
 
         let distribution = Distribution::Uniform(0.0, 1.0); // Any random value between 0.0 and 1.0
         let dummy_tensor = Tensor::<B, 2>::random(
-            Shape::new([batch_size, mz_conf.obs_dim]),
+            Shape::new([batch_size, mz_conf.obs_dim()]),
             distribution,
             &device,
         );

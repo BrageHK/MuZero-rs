@@ -7,6 +7,8 @@
 
 use burn::rl::{Environment, StepResult};
 
+use crate::env::{EnvInfo, MuZeroEnv};
+
 /// Board cells are bits 0..64, row-major: bit = row * 8 + col, a1 = bit 0.
 /// Action 64 is "pass", legal only when the mover has no placement.
 pub const PASS: usize = 64;
@@ -280,6 +282,25 @@ impl Environment for Othello {
 
     fn reset(&mut self) {
         *self = Self::default();
+    }
+}
+
+impl MuZeroEnv for Othello {
+    const INFO: EnvInfo = EnvInfo {
+        obs_shape: &[1, 8, 8],
+        action_size: 65,
+        num_players: 2,
+    };
+
+    fn legal_mask(&self) -> Vec<bool> {
+        let mut mask = vec![false; Self::INFO.action_size];
+        let mut moves = self.legal_moves_mask();
+        while moves != 0 {
+            mask[moves.trailing_zeros() as usize] = true;
+            moves &= moves - 1;
+        }
+        mask[PASS] = self.must_pass();
+        mask
     }
 }
 

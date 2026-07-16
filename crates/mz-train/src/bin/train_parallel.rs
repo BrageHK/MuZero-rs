@@ -101,7 +101,7 @@ fn main() {
     // request queues (initial_inference vs recurrent_inference).
     let channels = inference_channels::<InferB>();
     let master_agent_cell = Arc::clone(&agent_cell);
-    let action_space = mz_conf.action_space;
+    let action_space = mz_conf.action_space();
     let init_batch_size = mz_conf.init_batch_size;
     let rec_batch_size = mz_conf.rec_batch_size;
     let max_wait = Duration::from_secs_f32(mz_conf.max_thread_wait);
@@ -172,7 +172,7 @@ fn main() {
             println!("New best reward {best_reward}, saved model/best.mpk");
         }
 
-        for _train_step in 0..mz_conf.train_steps_per_game {
+        for _train_step in 0..mz_conf.train_ratio {
             let _loss;
             (agent, _loss) = train(
                 agent,

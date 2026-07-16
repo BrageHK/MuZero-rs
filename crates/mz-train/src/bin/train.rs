@@ -96,7 +96,7 @@ fn main() {
             game_len = 0;
             println!("N games: {}", buffer.games.len());
 
-            for train_step in 0..mz_conf.train_steps_per_game {
+            for train_step in 0..mz_conf.train_ratio {
                 print!("Training step: {train_step}");
                 let _loss;
                 (agent, _loss) = train(

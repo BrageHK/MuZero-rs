@@ -207,17 +207,14 @@ impl<B: Backend> ResNets<B> {
 
 impl<B: Backend> MuZeroNets<B> for ResNets<B> {
     fn init(mz_conf: &MuZeroConfig, device: &B::Device) -> Self {
-        let resnet = mz_conf
-            .resnet
-            .as_ref()
-            .expect("network_type: ResNet requires a `resnet:` section in the config");
+        let resnet = mz_conf.resnet();
         ResNetConfig {
             obs_channels: resnet.obs_channels,
             channels: resnet.channels,
             n_blocks: resnet.n_blocks,
             board_height: resnet.board_height,
             board_width: resnet.board_width,
-            action_space: mz_conf.action_space,
+            action_space: mz_conf.action_space(),
             fc_hidden_size: resnet.fc_hidden_size,
         }
         .init(device)

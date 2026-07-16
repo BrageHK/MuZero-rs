@@ -103,7 +103,7 @@ fn bench_throughput_parallel_wgpu(c: &mut Criterion) {
 
     let channels = inference_channels::<ParallelB>();
     let master_agent_cell = Arc::clone(&agent_cell);
-    let action_space = mz_conf.action_space;
+    let action_space = mz_conf.action_space();
     let init_batch_size = mz_conf.init_batch_size;
     let rec_batch_size = mz_conf.rec_batch_size;
     let max_wait = Duration::from_secs_f32(mz_conf.max_thread_wait);

@@ -57,7 +57,7 @@ where
                 // Appendix G: Training, trick to scale by 0.5
                 let scaled_hidden_state =
                     prev_hidden_state.clone() * 0.5 + prev_hidden_state.clone().detach() * 0.5;
-                agent.recurrent_inference(scaled_hidden_state, actions, mz_conf.action_space)
+                agent.recurrent_inference(scaled_hidden_state, actions, mz_conf.action_space())
             }
         };
 

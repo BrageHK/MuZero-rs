@@ -22,26 +22,27 @@ pub struct MlpNets<B: Backend> {
 
 impl<B: Backend> MuZeroNets<B> for MlpNets<B> {
     fn init(mz_conf: &MuZeroConfig, device: &B::Device) -> Self {
+        let linear = mz_conf.linear();
         MlpNets {
             representation: RepresentationModelConfig {
-                hidden_size: mz_conf.representation.latent_space_dims,
-                fc_hidden_size: mz_conf.representation.fc_hidden_size,
-                input_size: mz_conf.obs_dim,
-                n_layers: mz_conf.representation.n_layers,
+                hidden_size: linear.representation.latent_space_dims,
+                fc_hidden_size: linear.representation.fc_hidden_size,
+                input_size: mz_conf.obs_dim(),
+                n_layers: linear.representation.n_layers,
             }
             .init::<B>(device),
             dynamic: DynamicModelConfig {
-                hidden_input: mz_conf.dynamic.latent_space_dims + mz_conf.action_space,
-                fc_hidden_size: mz_conf.dynamic.fc_hidden_size,
-                hidden_output: mz_conf.dynamic.latent_space_dims,
-                n_layers: mz_conf.dynamic.n_layers,
+                hidden_input: linear.dynamic.latent_space_dims + mz_conf.action_space(),
+                fc_hidden_size: linear.dynamic.fc_hidden_size,
+                hidden_output: linear.dynamic.latent_space_dims,
+                n_layers: linear.dynamic.n_layers,
             }
             .init::<B>(device),
             prediction: PredictionModelConfig {
-                fc_hidden_size: mz_conf.prediction.fc_hidden_size,
-                hidden_size: mz_conf.prediction.latent_space_dims,
-                action_space: mz_conf.action_space,
-                n_layers: mz_conf.prediction.n_layers,
+                fc_hidden_size: linear.prediction.fc_hidden_size,
+                hidden_size: linear.prediction.latent_space_dims,
+                action_space: mz_conf.action_space(),
+                n_layers: linear.prediction.n_layers,
             }
             .init::<B>(device),
         }

@@ -33,6 +33,13 @@ pub struct NetworkSubConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LinearSubConfig {
+    pub representation: NetworkSubConfig,
+    pub dynamic: NetworkSubConfig,
+    pub prediction: NetworkSubConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResNetSubConfig {
     pub obs_channels: usize,
     pub channels: usize,
@@ -47,14 +54,10 @@ pub struct MuZeroConfig {
     pub network_type: NetworkType,
     pub environment: Environment,
 
-    pub representation: NetworkSubConfig,
-    pub dynamic: NetworkSubConfig,
-    pub prediction: NetworkSubConfig,
+    #[serde(default)]
+    pub linear: Option<LinearSubConfig>,
     #[serde(default)]
     pub resnet: Option<ResNetSubConfig>,
-
-    pub action_space: usize,
-    pub obs_dim: usize,
 
     pub n_steps: usize,
     pub unroll_steps: usize,
@@ -65,7 +68,7 @@ pub struct MuZeroConfig {
     pub dirichlet_noise: f32,
     pub root_exploration_fraction: f32,
     pub total_steps: usize,
-    pub train_steps_per_game: usize,
+    pub train_ratio: usize,
     pub inference_update_interval: usize,
     pub checkpoint_interval: usize,
 
@@ -74,6 +77,7 @@ pub struct MuZeroConfig {
     pub num_search_threads: Option<usize>,
     pub init_batch_size: usize,
     pub rec_batch_size: usize,
+    pub min_rayon_threads: usize,
 
     // Original muzero paper uses t = 1 first 500k steps, t = 0.5 for next 250k and 0.25 for remaining
     pub temperature_schedule: Vec<TemperatureSchedule>,
@@ -111,6 +115,18 @@ impl MuZeroConfig {
 }
 
 impl MuZeroConfig {
+    pub fn linear(&self) -> &LinearSubConfig {
+        self.linear
+            .as_ref()
+            .expect("network_type: Linear requires a `linear:` section in the config")
+    }
+
+    pub fn resnet(&self) -> &ResNetSubConfig {
+        self.resnet
+            .as_ref()
+            .expect("network_type: ResNet requires a `resnet:` section in the config")
+    }
+
     /// `num_search_threads`, defaulting to available cores when unset.
     pub fn search_threads(&self) -> usize {
         self.num_search_threads

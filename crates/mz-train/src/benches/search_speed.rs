@@ -17,7 +17,7 @@ fn bench_search_wgpu(c: &mut Criterion) {
 
     let mz_conf = MuZeroConfig::default();
     let agent = mz_conf.init::<B, MlpNets<B>>(&device);
-    let obs = Tensor::<B, 2>::zeros([1, mz_conf.obs_dim], &device);
+    let obs = Tensor::<B, 2>::zeros([1, mz_conf.obs_dim()], &device);
 
     c.bench_function("mcts_search_wgpu", |b| {
         b.iter(|| {
@@ -37,7 +37,7 @@ fn bench_search_ndarray(c: &mut Criterion) {
 
     let mz_conf = MuZeroConfig::default();
     let agent = mz_conf.init::<B, MlpNets<B>>(&device);
-    let obs = Tensor::<B, 2>::zeros([1, mz_conf.obs_dim], &device);
+    let obs = Tensor::<B, 2>::zeros([1, mz_conf.obs_dim()], &device);
 
     c.bench_function("mcts_search_ndarray", |b| {
         b.iter(|| {

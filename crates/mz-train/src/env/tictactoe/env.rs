@@ -7,6 +7,8 @@
 
 use burn::rl::{Environment, StepResult};
 
+use crate::env::{EnvInfo, MuZeroEnv};
+
 /// Board cells are bits 0..9, row-major:
 ///
 /// ```text
@@ -197,6 +199,20 @@ impl Environment for TicTacToe {
 
     fn reset(&mut self) {
         *self = Self::default();
+    }
+}
+
+impl MuZeroEnv for TicTacToe {
+    const INFO: EnvInfo = EnvInfo {
+        obs_shape: &[1, 3, 3],
+        action_size: 9,
+        num_players: 2,
+    };
+
+    fn legal_mask(&self) -> Vec<bool> {
+        (0..Self::INFO.action_size)
+            .map(|a| self.is_legal(a))
+            .collect()
     }
 }
 

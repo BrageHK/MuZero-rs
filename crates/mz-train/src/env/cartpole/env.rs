@@ -4,6 +4,8 @@ use gym_rs::{
     envs::classical_control::cartpole::{CartPoleEnv, CartPoleObservation},
 };
 
+use crate::env::{EnvInfo, MuZeroEnv};
+
 #[derive(Clone)]
 pub struct Action {
     pub action: usize,
@@ -79,5 +81,17 @@ impl Environment for CartPoleWrapper {
     fn reset(&mut self) {
         self.gym_env.reset(None, false, None);
         self.step_index = 0;
+    }
+}
+
+impl MuZeroEnv for CartPoleWrapper {
+    const INFO: EnvInfo = EnvInfo {
+        obs_shape: &[4],
+        action_size: 2,
+        num_players: 1,
+    };
+
+    fn legal_mask(&self) -> Vec<bool> {
+        vec![true; Self::INFO.action_size]
     }
 }
