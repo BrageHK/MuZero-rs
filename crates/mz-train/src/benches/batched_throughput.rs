@@ -81,7 +81,7 @@ fn run_group<N: MuZeroNets<B>>(c: &mut Criterion, group_name: &str) {
             }
             mz_conf.min_rayon_threads = min_len;
             group.bench_with_input(BenchmarkId::new(mode, n_games), &n_games, |b, _| {
-                b.iter(|| black_box(batched_search(obs.clone(), &mz_conf, &agent, 1.0)))
+                b.iter(|| black_box(batched_search(obs.clone(), None, &mz_conf, &agent, 1.0)))
             });
         }
     }

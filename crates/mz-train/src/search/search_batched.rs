@@ -24,6 +24,7 @@ struct BatchNode {
     policy: f32,
 }
 
+/// Returns a Vec of SearchReturn. This function will crash if there is only 1 legal action.
 pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     observations: Tensor<B, 2>,
     legal_masks: Option<&[Vec<bool>]>,
@@ -34,7 +35,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     let batch_size = observations.dims()[0];
     let device = observations.device();
     let discount = mz_conf.discount;
-    let action_space = mz_conf.action_space();
+    let action_space = mz_conf.action_space;
 
     let mut norms: Vec<QNormalization> =
         (0..batch_size).map(|_| QNormalization::default()).collect();
@@ -273,11 +274,82 @@ fn exploration_factor(parent_visits: usize) -> f32 {
     pv.sqrt() * (c1 + ((pv + c2 + 1.) / c2).ln())
 }
 
+fn root_priors(policy: &[f32], mask: Option<&[bool]>, alpha: f32, frac: f32) -> Vec<f32> {
+    let mask_legal_len = match mask {
+        Some(mask) => mask.iter().filter(|&&m| m).count(),
+        None => policy.len(),
+    };
+    let dirichlet = Dirichlet::new(vec![alpha; mask_legal_len].as_slice()).unwrap();
+    let noise = dirichlet.sample(&mut rand::rng());
+    let output = match mask {
+        Some(mask) => {
+            let mut output = Vec::<f32>::new();
+            for (i, p) in policy.iter().enumerate() {
+                if mask[i] {
+                    output.push(p * (1. - frac) + frac * noise.iter().next().unwrap());
+                } else {
+                    output.push(0.0);
+                }
+            }
+
+            output
+        }
+        None => policy
+            .iter()
+            .map(|p| p * (1.0 - frac) + frac * noise.iter().next().unwrap())
+            .collect(),
+    };
+
+    let sum: f32 = output.iter().sum();
+    output.iter().map(|x| x / sum).collect()
+}
+
 #[cfg(all(test, feature = "ndarray"))]
 mod tests {
     use super::*;
     use crate::agent::MlpNets;
     use burn::backend::NdArray;
+
+    // Tests the strictly lower possible bounds and sum of root_priors function
+    #[test]
+    fn root_priors_test() {
+        const EPS: f32 = 1e-6;
+        let priors = root_priors(&[0.2, 0.5, 0.3], Some(&[true, true, false]), 1., 0.25);
+        println!("Priors: {:?}", &priors);
+        assert!(priors[0] >= 0.75 * 0.2);
+        assert!(priors[1] >= 0.75 * 0.5);
+        assert!(priors[2] == 0.0);
+
+        let sum: f32 = priors.iter().sum();
+        println!("sum: {}", &sum);
+        assert!((sum - 1.0).abs() < EPS, "Actual sum: {sum}");
+
+        let priors = root_priors(&[0.2, 0.5, 0.3], Some(&[true, false, true]), 1., 0.25);
+        assert!(priors[0] >= 0.75 * 0.2);
+        assert!(priors[1] == 0.0);
+        assert!(priors[2] >= 0.75 * 0.3);
+
+        let sum: f32 = priors.iter().sum();
+        assert!((sum - 1.0).abs() < EPS, "Actual sum: {sum}");
+
+        let priors = root_priors(&[0.2, 0.5, 0.3], None, 1., 0.25);
+        assert!(priors[0] >= 0.75 * 0.2);
+        assert!(priors[1] >= 0.75 * 0.5);
+        assert!(priors[2] >= 0.75 * 0.3);
+
+        let sum: f32 = priors.iter().sum();
+        assert!((sum - 1.0).abs() < EPS, "Actual sum: {sum}");
+        assert!(priors.len() == 3);
+        println!("Priors: {:?}", &priors);
+
+        let priors = root_priors(&[0.2, 0.5, 0.3], Some(&[true, true, true]), 1., 0.25);
+        assert!(priors[0] >= 0.75 * 0.2);
+        assert!(priors[1] >= 0.75 * 0.5);
+        assert!(priors[2] >= 0.75 * 0.3);
+
+        let sum: f32 = priors.iter().sum();
+        assert!((sum - 1.0).abs() < EPS, "Actual sum: {sum}");
+    }
 
     #[test]
     fn batched_search_valid_distributions() {
@@ -293,7 +365,7 @@ mod tests {
         );
 
         for tau in [0.0, 1.0] {
-            let results = batched_search(obs.clone(), &mz_conf, &agent, tau);
+            let results = batched_search(obs.clone(), None, &mz_conf, &agent, tau);
             assert_eq!(results.len(), batch_size);
             for res in &results {
                 assert_eq!(res.distribution.len(), mz_conf.action_space);
@@ -319,7 +391,7 @@ mod tests {
 
         // With tau=1 the distribution is visits/total; root child visits sum
         // to num_simulations, so no probability mass can be lost.
-        let results = batched_search(obs, &mz_conf, &agent, 1.0);
+        let results = batched_search(obs, None, &mz_conf, &agent, 1.0);
         for res in &results {
             assert!(res.distribution.iter().all(|&p| (0.0..=1.0).contains(&p)));
         }

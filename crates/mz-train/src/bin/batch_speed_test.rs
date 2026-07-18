@@ -20,12 +20,12 @@ fn main() {
 
     for i in 0..17 {
         let batch_size: usize = 2_usize.pow(i);
-        mz_conf.batch_size = batch_size;
+        mz_conf.training_batch_size = batch_size;
         let mz_agent: MlpNets<B> = mz_conf.init(&device);
 
         let distribution = Distribution::Uniform(0.0, 1.0); // Any random value between 0.0 and 1.0
         let dummy_tensor = Tensor::<B, 2>::random(
-            Shape::new([batch_size, mz_conf.obs_dim()]),
+            Shape::new([batch_size, mz_conf.obs_dim]),
             distribution,
             &device,
         );

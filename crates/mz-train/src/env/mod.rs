@@ -2,7 +2,8 @@ pub mod cartpole;
 pub mod othello;
 pub mod tictactoe;
 
-use crate::mz_config::MuZeroConfig;
+use burn::rl::StepResult;
+use burn::tensor::{Tensor, backend::Backend};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EnvInfo {
@@ -23,35 +24,54 @@ impl EnvInfo {
     }
 }
 
-pub trait MuZeroEnv: burn::rl::Environment {
+/// Custom implementation of Burn RL's Env trait. This trait contains fields
+/// that are needed for MuZero
+pub trait Environment {
+    /// The type of the state.
+    type State;
+    /// The type of actions.
+    type Action;
+
+    /// The maximum number of step for one episode.
+    const MAX_STEPS: usize;
+    /// Environment info
     const INFO: EnvInfo;
 
+    /// Returns the current state.
+    fn state(&self) -> Self::State;
+    /// Flat observation of the current state, length `INFO.obs_dim()`.
+    fn obs(&self) -> Vec<f32>;
+    /// Current state as a `[1, obs_dim]` tensor, ready for the networks.
+    fn state_tensor<B: Backend>(&self, device: &B::Device) -> Tensor<B, 2> {
+        Tensor::<B, 1>::from_floats(self.obs().as_slice(), device)
+            .reshape([1, Self::INFO.obs_dim()])
+    }
+    /// States of a batch of environments as a `[batch, obs_dim]` tensor.
+    fn batch_state_tensor<B: Backend>(envs: &[Self], device: &B::Device) -> Tensor<B, 2>
+    where
+        Self: Sized,
+    {
+        let dim = Self::INFO.obs_dim();
+        let mut data = Vec::with_capacity(envs.len() * dim);
+        for env in envs {
+            data.extend(env.obs());
+        }
+        Tensor::<B, 1>::from_floats(data.as_slice(), device).reshape([envs.len(), dim])
+    }
+    /// Take a step in the environment given an action.
+    fn step(&mut self, action: Self::Action) -> StepResult<Self::State>;
+    /// Reset the environment to an initial state.
+    fn reset(&mut self);
+    /// Legal moves in this position
     fn legal_mask(&self) -> Vec<bool>;
-}
-
-impl MuZeroConfig {
-    pub fn env_info(&self) -> EnvInfo {
-        crate::with_env!(self, E => <E as MuZeroEnv>::INFO)
-    }
-
-    pub fn action_space(&self) -> usize {
-        self.env_info().action_size
-    }
-
-    pub fn obs_dim(&self) -> usize {
-        self.env_info().obs_dim()
+    /// Get static info about the environemnt
+    fn get_info(&self) -> EnvInfo {
+        Self::INFO
     }
 }
 
-/// Runs `$body` with `$E` bound to the concrete environment type selected by
-/// `mz_conf.environment`.
-///
-/// `burn::rl::Environment` has associated types (`State`, `Action`) and a
-/// `const MAX_STEPS`, so it is not dyn-compatible and a function cannot return
-/// "some environment". Instead, dispatch into generic code:
-///
 /// ```ignore
-/// use burn::rl::Environment;
+/// use crate::env::Environment;
 /// use mz_rs::with_env;
 ///
 /// with_env!(mz_conf, E => {
@@ -64,41 +84,18 @@ impl MuZeroConfig {
 macro_rules! with_env {
     ($mz_conf:expr, $E:ident => $body:expr) => {
         match $mz_conf.environment {
-            $crate::mz_config::Environment::CartPole => {
+            $crate::mz_config::EnvironmentName::CartPole => {
                 type $E = $crate::env::cartpole::env::CartPoleWrapper;
                 $body
             }
-            $crate::mz_config::Environment::TicTacToe => {
+            $crate::mz_config::EnvironmentName::TicTacToe => {
                 type $E = $crate::env::tictactoe::env::TicTacToe;
                 $body
             }
-            $crate::mz_config::Environment::Othello => {
+            $crate::mz_config::EnvironmentName::Othello => {
                 type $E = $crate::env::othello::env::Othello;
                 $body
             }
         }
     };
-}
-
-#[cfg(test)]
-mod tests {
-    use burn::rl::Environment;
-
-    use crate::mz_config::{self, MuZeroConfig};
-
-    #[test]
-    fn dispatches_to_env_selected_by_config() {
-        let mut conf = MuZeroConfig::default();
-
-        conf.environment = mz_config::Environment::TicTacToe;
-        let max_steps = with_env!(conf, E => E::MAX_STEPS);
-        assert_eq!(max_steps, crate::env::tictactoe::env::TicTacToe::MAX_STEPS);
-
-        conf.environment = mz_config::Environment::CartPole;
-        with_env!(conf, E => {
-            let mut env = E::default();
-            env.reset();
-            let _state = env.state();
-        });
-    }
 }

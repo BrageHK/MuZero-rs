@@ -5,9 +5,9 @@
 //  ░  "shipped it anyway"  ░
 //  ░░░░░░░░░░░░░░░░░░░░░░░░░
 
-use burn::rl::{Environment, StepResult};
+use burn::rl::StepResult;
 
-use crate::env::{EnvInfo, MuZeroEnv};
+use crate::env::{EnvInfo, Environment};
 
 /// Board cells are bits 0..64, row-major: bit = row * 8 + col, a1 = bit 0.
 /// Action 64 is "pass", legal only when the mover has no placement.
@@ -244,6 +244,10 @@ impl Environment for Othello {
         }
     }
 
+    fn obs(&self) -> Vec<f32> {
+        self.state().to_obs().iter().map(|&x| x as f32).collect()
+    }
+
     /// Reward is from the perspective of the player taking the action, granted only
     /// on the terminal step: +1 win, -1 loss, 0 draw. Illegal moves end the game at -1.
     fn step(&mut self, action: usize) -> StepResult<Self::State> {
@@ -283,9 +287,7 @@ impl Environment for Othello {
     fn reset(&mut self) {
         *self = Self::default();
     }
-}
 
-impl MuZeroEnv for Othello {
     const INFO: EnvInfo = EnvInfo {
         obs_shape: &[1, 8, 8],
         action_size: 65,

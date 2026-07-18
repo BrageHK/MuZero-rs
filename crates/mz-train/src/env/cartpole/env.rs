@@ -1,10 +1,10 @@
-use burn::rl::{Environment, StepResult};
+use burn::rl::StepResult;
 use gym_rs::{
     core::Env,
     envs::classical_control::cartpole::{CartPoleEnv, CartPoleObservation},
 };
 
-use crate::env::{EnvInfo, MuZeroEnv};
+use crate::env::{EnvInfo, Environment};
 
 #[derive(Clone)]
 pub struct Action {
@@ -67,6 +67,10 @@ impl Environment for CartPoleWrapper {
         CartPoleState::from(self.gym_env.state)
     }
 
+    fn obs(&self) -> Vec<f32> {
+        self.state().state.iter().map(|&x| x as f32).collect()
+    }
+
     fn step(&mut self, action: usize) -> StepResult<Self::State> {
         let action_reward = self.gym_env.step(action);
         self.step_index += 1;
@@ -82,9 +86,7 @@ impl Environment for CartPoleWrapper {
         self.gym_env.reset(None, false, None);
         self.step_index = 0;
     }
-}
 
-impl MuZeroEnv for CartPoleWrapper {
     const INFO: EnvInfo = EnvInfo {
         obs_shape: &[4],
         action_size: 2,

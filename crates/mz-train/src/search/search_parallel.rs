@@ -245,12 +245,12 @@ pub fn search<B: Backend>(
     let mut norm = QNormalization::default();
 
     let mut nodes =
-        Vec::<Node<B>>::with_capacity((mz_conf.num_simulations + 1) * mz_conf.action_space());
+        Vec::<Node<B>>::with_capacity((mz_conf.num_simulations + 1) * mz_conf.action_space);
 
     // Initialize and expand root (node 0)
     let (root_hidden_state, root_reward_val, root_value_val, root_policy_vals) =
         inference.request_init(obs);
-    let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_noise; mz_conf.action_space()]).unwrap();
+    let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_noise; mz_conf.action_space]).unwrap();
     let noise = dirichlet.sample(&mut rand::rng());
     let frac = mz_conf.root_exploration_fraction;
 
@@ -258,7 +258,7 @@ pub fn search<B: Backend>(
         visits: 1,
         action: 0, // This action is irelevant
         hidden_state: Some(root_hidden_state),
-        children: (1..=mz_conf.action_space()).collect(),
+        children: (1..=mz_conf.action_space).collect(),
         cumulative_value: root_value_val,
         reward: root_reward_val,
         policy: 0.,
@@ -365,7 +365,7 @@ pub fn search<B: Backend>(
 
     let root_node = &nodes[0];
     let value = nodes[0].cumulative_value / (nodes[0].visits as f32);
-    let mut visit_distribution = vec![0.0f32; mz_conf.action_space()];
+    let mut visit_distribution = vec![0.0f32; mz_conf.action_space];
     if tau == 0.0 {
         let best_child_idx = root_node
             .children

@@ -1,4 +1,4 @@
-use burn::DispatchDevice;
+use burn::{DispatchDevice, optim::Optimizer};
 use serde::{Deserialize, Serialize};
 
 use crate::mz_config::TemperatureSchedule;

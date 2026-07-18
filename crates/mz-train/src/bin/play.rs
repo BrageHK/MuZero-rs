@@ -1,8 +1,8 @@
 use burn::Dispatch;
-use burn::rl::Environment;
 use burn::tensor::Tensor;
 use gif::{Encoder, Frame, Repeat};
 use gym_rs::utils::renderer::{RenderColor, RenderFrame, RenderMode};
+use mz_rs::env::Environment;
 use mz_rs::utils::select_device;
 use mz_rs::{
     agent::MlpNets, env::cartpole::env::CartPoleWrapper, mz_config::MuZeroConfig,
@@ -58,11 +58,7 @@ fn main() {
         let mut steps = 0;
 
         loop {
-            let s = env.state().state;
-            let obs = Tensor::<B, 2>::from_floats(
-                [[s[0] as f32, s[1] as f32, s[2] as f32, s[3] as f32]],
-                &device,
-            );
+            let obs = env.state_tensor::<B>(&device);
 
             let (dist, _value, _action) = search(obs, &mz_conf, &agent, 0.10);
             let action = WeightedIndex::new(&dist).unwrap().sample(&mut rng);

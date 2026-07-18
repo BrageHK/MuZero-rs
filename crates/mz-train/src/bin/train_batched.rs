@@ -1,0 +1,112 @@
+use std::mem;
+
+use burn::module::AutodiffModule;
+use burn::optim::AdamConfig;
+use burn::tensor::Tensor;
+use burn::tensor::backend::AutodiffBackend;
+use burn::{Dispatch, DispatchDevice};
+use mz_rs::env::Environment;
+
+use mz_rs::agent::MlpNets;
+use mz_rs::mz_config::MuZeroConfig;
+use mz_rs::networks::nets_to_backend;
+use mz_rs::replay_buffer::{BufferData, ReplayBuffer};
+use mz_rs::search::search_batched::batched_search;
+use mz_rs::train::train;
+use mz_rs::utils::{select_device, tau_for_step};
+use mz_rs::with_env;
+
+use rand_distr::Distribution;
+use rand_distr::weighted::WeightedIndex;
+
+fn main() {
+    type TrainB = Dispatch;
+    type StoreB = <TrainB as AutodiffBackend>::InnerBackend;
+    type InferB = Dispatch;
+
+    let mz_conf = MuZeroConfig::default();
+
+    // Plain device for buffer/store tensors, autodiff-wrapped for the model.
+    let device = select_device(mz_conf.training_backend);
+    let train_device = DispatchDevice::autodiff(device.clone());
+    let infer_device = select_device(mz_conf.inference_backend);
+
+    let mut agent: MlpNets<TrainB> = mz_conf.init_agent(&train_device);
+    let mut optimizer = AdamConfig::new().init::<TrainB, MlpNets<TrainB>>(); // TODO: Most papers use SDG
+    let mut inference_agent: MlpNets<InferB> =
+        nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
+
+    let training_steps = (mz_conf.game_batch_size as f32 / mz_conf.training_batch_size as f32
+        * mz_conf.train_ratio) as i32;
+
+    with_env!(mz_conf, E => {
+        let mut env_batch = vec![E::default(); mz_conf.game_batch_size];
+        for env in env_batch.iter_mut() {
+            env.reset();
+        }
+
+        let mut buffer = ReplayBuffer::<StoreB>::default();
+
+        let mut game_batch: Vec<Vec<BufferData<StoreB>>> =
+            vec![Vec::new(); mz_conf.game_batch_size];
+        let mut game_len_batch = vec![0usize; mz_conf.game_batch_size];
+
+        for training_step in 0..mz_conf.total_steps {
+            let tau = tau_for_step(&mz_conf.temperature_schedule, training_step);
+
+            let obs = E::batch_state_tensor::<InferB>(&env_batch, &infer_device);
+            let obs_store = E::batch_state_tensor::<StoreB>(&env_batch, &device);
+            let legal_masks: Vec<Vec<bool>> =
+                env_batch.iter().map(|env| env.legal_mask()).collect();
+
+            let results = batched_search(obs, Some(&legal_masks), &mz_conf, &inference_agent, tau);
+
+            let mut finished_any = false;
+            for (i, search_result) in results.iter().enumerate() {
+                game_len_batch[i] += 1;
+                let dist = WeightedIndex::new(&search_result.distribution).unwrap();
+                let action = dist.sample(&mut rand::rng());
+
+                let result = env_batch[i].step(action);
+
+                game_batch[i].push(BufferData {
+                    state: obs_store.clone().slice([i..i + 1]),
+                    action,
+                    value: search_result.value,
+                    reward: result.reward as f32,
+                    policy: Tensor::<StoreB, 1>::from_floats(
+                        search_result.distribution.as_slice(),
+                        &device,
+                    )
+                    .unsqueeze_dim(0),
+                });
+
+                if result.truncated || result.done {
+                    println!("Game finished after {} steps", game_len_batch[i]);
+                    buffer.store_game(mem::take(&mut game_batch[i]));
+                    env_batch[i].reset();
+                    game_len_batch[i] = 0;
+                    finished_any = true;
+                }
+            }
+
+            if finished_any {
+                println!("N games: {}", buffer.games.len());
+            }
+
+            for train_step in 0..training_steps {
+                print!("Training step: {train_step}");
+                let _loss;
+                (agent, _loss) = train(
+                    agent,
+                    &mut optimizer,
+                    &mz_conf,
+                    &mut buffer,
+                    mz_conf.learning_rate,
+                    &train_device,
+                );
+            }
+            inference_agent = nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
+        }
+    });
+}

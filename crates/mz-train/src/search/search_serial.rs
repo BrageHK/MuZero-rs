@@ -52,11 +52,11 @@ pub fn search<B: Backend, N: MuZeroNets<B>>(
     let mut norm = QNormalization::default();
 
     let mut nodes =
-        Vec::<Node<B>>::with_capacity((mz_conf.num_simulations + 1) * mz_conf.action_space());
+        Vec::<Node<B>>::with_capacity((mz_conf.num_simulations + 1) * mz_conf.action_space);
 
     // Initialize and expand root (node 0)
     let (root_hidden_state, root_reward, root_value, root_policy) = mz_agent.initial_inference(obs);
-    let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_noise; mz_conf.action_space()]).unwrap();
+    let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_noise; mz_conf.action_space]).unwrap();
     let noise = dirichlet.sample(&mut rand::rng());
     let frac = mz_conf.root_exploration_fraction;
 
@@ -68,7 +68,7 @@ pub fn search<B: Backend, N: MuZeroNets<B>>(
         visits: 1,
         action: 0, // This action is irelevant
         hidden_state: Some(root_hidden_state.squeeze_dim(0)),
-        children: (1..=mz_conf.action_space()).collect(),
+        children: (1..=mz_conf.action_space).collect(),
         cumulative_value: root_value_val,
         reward: root_reward_val,
         policy: 0.,
@@ -139,7 +139,7 @@ pub fn search<B: Backend, N: MuZeroNets<B>>(
         let (new_hs, new_reward, new_value, new_policy) = mz_agent.recurrent_inference(
             parent_hs.clone().unsqueeze(),
             action_tensor,
-            mz_conf.action_space(),
+            mz_conf.action_space,
         );
 
         let new_policy_len = new_policy.dims()[1];
@@ -183,7 +183,7 @@ pub fn search<B: Backend, N: MuZeroNets<B>>(
 
     let root_node = &nodes[0];
     let value = nodes[0].cumulative_value / (nodes[0].visits as f32);
-    let mut visit_distribution = vec![0.0f32; mz_conf.action_space()];
+    let mut visit_distribution = vec![0.0f32; mz_conf.action_space];
     if tau == 0.0 {
         let best_child_idx = root_node
             .children

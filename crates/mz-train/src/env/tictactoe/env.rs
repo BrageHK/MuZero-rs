@@ -5,9 +5,9 @@
 //  ░  "shipped it anyway"  ░
 //  ░░░░░░░░░░░░░░░░░░░░░░░░░
 
-use burn::rl::{Environment, StepResult};
+use burn::rl::StepResult;
 
-use crate::env::{EnvInfo, MuZeroEnv};
+use crate::env::{EnvInfo, Environment};
 
 /// Board cells are bits 0..9, row-major:
 ///
@@ -172,6 +172,10 @@ impl Environment for TicTacToe {
         }
     }
 
+    fn obs(&self) -> Vec<f32> {
+        self.state().to_obs().iter().map(|&x| x as f32).collect()
+    }
+
     /// Reward is from the perspective of the player taking the action:
     /// +1 win, 0 draw or game still running, -1 illegal move (which also ends the game).
     fn step(&mut self, action: usize) -> StepResult<Self::State> {
@@ -200,9 +204,7 @@ impl Environment for TicTacToe {
     fn reset(&mut self) {
         *self = Self::default();
     }
-}
 
-impl MuZeroEnv for TicTacToe {
     const INFO: EnvInfo = EnvInfo {
         obs_shape: &[1, 3, 3],
         action_size: 9,

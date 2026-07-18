@@ -1,10 +1,24 @@
 use std::fs;
 
-use burn::record::CompactRecorder;
-use burn::tensor::backend::Backend;
+use burn::tensor::backend::{AutodiffBackend, Backend};
+use burn::{optim::Optimizer, record::CompactRecorder};
 use serde::{Deserialize, Serialize};
 
-use crate::{networks::MuZeroNets, utils::BackendChoice};
+use crate::mz_config::OptimChoice::{Adam, Sdg};
+use crate::{
+    env::Environment,
+    mz_config::NetworkType::{Linear, ResNet},
+    networks::MuZeroNets,
+    utils::BackendChoice,
+    with_env,
+};
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum OptimChoice {
+    Adam,
+    AdamW,
+    Sdg,
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum NetworkType {
@@ -13,7 +27,7 @@ pub enum NetworkType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum Environment {
+pub enum EnvironmentName {
     CartPole,
     TicTacToe,
     Othello,
@@ -52,23 +66,25 @@ pub struct ResNetSubConfig {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MuZeroConfig {
     pub network_type: NetworkType,
-    pub environment: Environment,
+    pub environment: EnvironmentName,
 
     #[serde(default)]
     pub linear: Option<LinearSubConfig>,
     #[serde(default)]
     pub resnet: Option<ResNetSubConfig>,
 
+    pub optimizer: OptimChoice,
     pub n_steps: usize,
     pub unroll_steps: usize,
-    pub batch_size: usize,
+    pub training_batch_size: usize,
+    pub game_batch_size: usize,
     pub discount: f32,
     pub learning_rate: f64,
     pub num_simulations: usize,
     pub dirichlet_noise: f32,
     pub root_exploration_fraction: f32,
     pub total_steps: usize,
-    pub train_ratio: usize,
+    pub train_ratio: f32,
     pub inference_update_interval: usize,
     pub checkpoint_interval: usize,
 
@@ -91,6 +107,12 @@ pub struct MuZeroConfig {
     pub training_backend: BackendChoice,
     #[serde(default)]
     pub inference_backend: BackendChoice,
+
+    // !!!! Never set these from the config! It will be overwritten by the chosen env.
+    #[serde(default)]
+    pub action_space: usize,
+    #[serde(default)]
+    pub obs_dim: usize,
 }
 
 impl Default for MuZeroConfig {
@@ -103,15 +125,35 @@ impl Default for MuZeroConfig {
                 ))
             })
             .expect("Failed to read configs/config.yaml");
-        serde_yaml::from_str(&file_content).unwrap()
+        get_conf(file_content)
     }
 }
 
 impl MuZeroConfig {
     pub fn new<B: Backend>(path: &str) -> Self {
         let file_content = fs::read_to_string(path).expect("Failed to read file");
-        serde_yaml::from_str(&file_content).unwrap()
+        get_conf(file_content)
     }
+}
+
+fn get_conf(file_content: String) -> MuZeroConfig {
+    let mut conf: MuZeroConfig = serde_yaml::from_str(&file_content).unwrap();
+    with_env!(conf, E => {
+        let env = E::default();
+
+        match conf.network_type {
+            Linear => (),
+            ResNet => {
+                if env.get_info().obs_shape.len() < 2 {
+                    panic!("Cannot use ResNet with a 1D environment");
+                }
+            },
+        };
+        let info = env.get_info();
+        conf.action_space = info.action_size;
+        conf.obs_dim = info.obs_dim();
+    });
+    conf
 }
 
 impl MuZeroConfig {

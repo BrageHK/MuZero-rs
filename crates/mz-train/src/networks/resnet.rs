@@ -214,7 +214,7 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
             n_blocks: resnet.n_blocks,
             board_height: resnet.board_height,
             board_width: resnet.board_width,
-            action_space: mz_conf.action_space(),
+            action_space: mz_conf.action_space,
             fc_hidden_size: resnet.fc_hidden_size,
         }
         .init(device)

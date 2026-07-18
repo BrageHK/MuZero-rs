@@ -38,7 +38,7 @@ impl<B: Backend> ReplayBuffer<B> {
     }
 
     pub fn sample_games(&mut self, mz_config: &MuZeroConfig) -> Vec<Vec<BufferData<B>>> {
-        (0..mz_config.batch_size)
+        (0..mz_config.training_batch_size)
             .map(|_| self.sample_single(mz_config))
             .collect()
     }
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn store_games() {
         let mut mz_config = MuZeroConfig::default();
-        mz_config.batch_size = 1;
+        mz_config.training_batch_size = 1;
         let device = Default::default();
         let mut buffer = ReplayBuffer::<B>::default();
         // Game shorter than unroll_steps: last step always absorbing
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn store_1_game() {
         let mut mz_config = MuZeroConfig::default();
-        mz_config.batch_size = 1;
+        mz_config.training_batch_size = 1;
         let device = Default::default();
         let mut buffer = ReplayBuffer::<B>::default();
         buffer.store_game(create_game::<B>(1, &device));

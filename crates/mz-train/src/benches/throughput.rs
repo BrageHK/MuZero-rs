@@ -8,11 +8,11 @@ use burn::backend::{
     ndarray::{NdArray, NdArrayDevice},
     wgpu::WgpuDevice,
 };
-use burn::rl::Environment;
 use burn::tensor::Tensor;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use crossbeam::channel::{Sender, unbounded};
 use mz_rs::agent::MlpNets;
+use mz_rs::env::Environment;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
 use mz_rs::mz_config::MuZeroConfig;
 use mz_rs::search::search as search_parallel;
@@ -31,11 +31,7 @@ type ParallelB = Wgpu<f32, i32>;
 fn play_one_game_serial(mz_conf: &MuZeroConfig, agent: &MlpNets<SerialB>, device: &NdArrayDevice) {
     let mut env = CartPoleWrapper::default();
     loop {
-        let s = env.state().state;
-        let obs = Tensor::<SerialB, 2>::from_floats(
-            [[s[0] as f32, s[1] as f32, s[2] as f32, s[3] as f32]],
-            device,
-        );
+        let obs = env.state_tensor::<SerialB>(device);
         let (visit_distribution, _value, _action) = search_serial(obs, mz_conf, agent, 1.0);
         let dist = WeightedIndex::new(&visit_distribution).unwrap();
         let action = dist.sample(&mut rand::rng());
@@ -77,11 +73,7 @@ fn worker_loop_bench(
 ) {
     let mut env = CartPoleWrapper::default();
     while !stop.load(Ordering::Relaxed) {
-        let s = env.state().state;
-        let obs = Tensor::<ParallelB, 2>::from_floats(
-            [[s[0] as f32, s[1] as f32, s[2] as f32, s[3] as f32]],
-            &infer_device,
-        );
+        let obs = env.state_tensor::<ParallelB>(&infer_device);
         let (visit_distribution, _value, _action) = search_parallel(obs, &mz_conf, 1.0, &inference);
         let dist = WeightedIndex::new(&visit_distribution).unwrap();
         let action = dist.sample(&mut rand::rng());
@@ -103,7 +95,7 @@ fn bench_throughput_parallel_wgpu(c: &mut Criterion) {
 
     let channels = inference_channels::<ParallelB>();
     let master_agent_cell = Arc::clone(&agent_cell);
-    let action_space = mz_conf.action_space();
+    let action_space = mz_conf.action_space;
     let init_batch_size = mz_conf.init_batch_size;
     let rec_batch_size = mz_conf.rec_batch_size;
     let max_wait = Duration::from_secs_f32(mz_conf.max_thread_wait);

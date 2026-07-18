@@ -27,12 +27,12 @@ impl<B: Backend> MuZeroNets<B> for MlpNets<B> {
             representation: RepresentationModelConfig {
                 hidden_size: linear.representation.latent_space_dims,
                 fc_hidden_size: linear.representation.fc_hidden_size,
-                input_size: mz_conf.obs_dim(),
+                input_size: mz_conf.obs_dim,
                 n_layers: linear.representation.n_layers,
             }
             .init::<B>(device),
             dynamic: DynamicModelConfig {
-                hidden_input: linear.dynamic.latent_space_dims + mz_conf.action_space(),
+                hidden_input: linear.dynamic.latent_space_dims + mz_conf.action_space,
                 fc_hidden_size: linear.dynamic.fc_hidden_size,
                 hidden_output: linear.dynamic.latent_space_dims,
                 n_layers: linear.dynamic.n_layers,
@@ -41,7 +41,7 @@ impl<B: Backend> MuZeroNets<B> for MlpNets<B> {
             prediction: PredictionModelConfig {
                 fc_hidden_size: linear.prediction.fc_hidden_size,
                 hidden_size: linear.prediction.latent_space_dims,
-                action_space: mz_conf.action_space(),
+                action_space: mz_conf.action_space,
                 n_layers: linear.prediction.n_layers,
             }
             .init::<B>(device),

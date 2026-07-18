@@ -6,12 +6,12 @@ use std::time::Duration;
 use burn::module::{AutodiffModule, Module};
 use burn::optim::AdamConfig;
 use burn::record::CompactRecorder;
-use burn::rl::Environment;
 use burn::tensor::Tensor;
 use burn::tensor::backend::{AutodiffBackend, Backend};
 use burn::{Dispatch, DispatchDevice};
 use crossbeam::channel::{Sender, unbounded};
 use mz_rs::agent::MlpNets;
+use mz_rs::env::Environment;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
 use mz_rs::mz_config::{MuZeroConfig, NetworkType};
 use mz_rs::networks::nets_to_backend;
@@ -22,8 +22,6 @@ use mz_rs::utils::{select_device, tau_for_step};
 use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;
 
-/// One self-play worker: owns its own game and its own tree per move, talks
-/// to the shared inference master thread for every NN call.
 fn worker_loop<StoreB: Backend, InferB: Backend>(
     mz_conf: MuZeroConfig,
     inference: InferenceHandles<InferB>,
@@ -37,10 +35,8 @@ fn worker_loop<StoreB: Backend, InferB: Backend>(
     let mut game: Vec<BufferData<StoreB>> = Vec::new();
 
     while !stop.load(Ordering::Relaxed) {
-        let s = env.state().state;
-        let obs_floats = [[s[0] as f32, s[1] as f32, s[2] as f32, s[3] as f32]];
-        let obs = Tensor::<InferB, 2>::from_floats(obs_floats, &infer_device);
-        let obs_store = Tensor::<StoreB, 2>::from_floats(obs_floats, &store_device);
+        let obs = env.state_tensor::<InferB>(&infer_device);
+        let obs_store = env.state_tensor::<StoreB>(&store_device);
 
         let step = global_step.fetch_add(1, Ordering::Relaxed);
         let tau = tau_for_step(&mz_conf.temperature_schedule, step);
@@ -101,7 +97,7 @@ fn main() {
     // request queues (initial_inference vs recurrent_inference).
     let channels = inference_channels::<InferB>();
     let master_agent_cell = Arc::clone(&agent_cell);
-    let action_space = mz_conf.action_space();
+    let action_space = mz_conf.action_space;
     let init_batch_size = mz_conf.init_batch_size;
     let rec_batch_size = mz_conf.rec_batch_size;
     let max_wait = Duration::from_secs_f32(mz_conf.max_thread_wait);
@@ -172,7 +168,7 @@ fn main() {
             println!("New best reward {best_reward}, saved model/best.mpk");
         }
 
-        for _train_step in 0..mz_conf.train_ratio {
+        for _train_step in 0..mz_conf.train_ratio as i32 {
             let _loss;
             (agent, _loss) = train(
                 agent,

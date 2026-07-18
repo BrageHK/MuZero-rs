@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use burn::rl::Environment;
+use mz_rs::env::Environment;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
 
 fn play_games_for(duration: Duration, games_counter: &AtomicU64) {

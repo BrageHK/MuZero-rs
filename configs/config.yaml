@@ -35,9 +35,11 @@ training_backend: ndarray # wgpu
 inference_backend: ndarray # ndarray
 
 # Training + algorithm
+optimizer: Sdg # AdamW, Adam, Sdg
 n_steps: 10
 unroll_steps: 5
-batch_size: 32
+training_batch_size: 32
+game_batch_size: 1024
 discount: 0.997
 learning_rate: 0.001
 train_ratio: 2

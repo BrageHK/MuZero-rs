@@ -1,10 +1,10 @@
 use burn::module::AutodiffModule;
 use burn::optim::AdamConfig;
-use burn::rl::Environment;
 use burn::tensor::Tensor;
 use burn::tensor::backend::AutodiffBackend;
 use burn::{Dispatch, DispatchDevice};
 
+use mz_rs::env::Environment;
 use mz_rs::agent::MlpNets;
 use mz_rs::mz_config::{MuZeroConfig, NetworkType};
 use mz_rs::networks::nets_to_backend;
@@ -18,9 +18,6 @@ use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;
 
 fn main() {
-    // TODO: make training parallel so GPU search is faster than CPU search
-    // Dispatch picks the concrete backend at runtime from the config; autodiff
-    // lives in the device, so TrainB/StoreB/InferB are all the same type.
     type TrainB = Dispatch;
     type StoreB = <TrainB as AutodiffBackend>::InnerBackend;
     type InferB = Dispatch;
@@ -54,10 +51,8 @@ fn main() {
 
     for training_step in 0..mz_conf.total_steps {
         game_len += 1;
-        let s = env.state().state;
-        let obs_floats = [[s[0] as f32, s[1] as f32, s[2] as f32, s[3] as f32]];
-        let obs = Tensor::<InferB, 2>::from_floats(obs_floats, &infer_device);
-        let obs_store = Tensor::<StoreB, 2>::from_floats(obs_floats, &device);
+        let obs = env.state_tensor::<InferB>(&infer_device);
+        let obs_store = env.state_tensor::<StoreB>(&device);
 
         match mz_conf.temperature_schedule[tau_idx].step {
             Some(n) => {
@@ -96,7 +91,7 @@ fn main() {
             game_len = 0;
             println!("N games: {}", buffer.games.len());
 
-            for train_step in 0..mz_conf.train_ratio {
+            for train_step in 0..mz_conf.train_ratio as i32 {
                 print!("Training step: {train_step}");
                 let _loss;
                 (agent, _loss) = train(
