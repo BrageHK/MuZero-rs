@@ -52,6 +52,8 @@ total_steps: 1000000
 avg_window: 100 # avg-reward plot averages over the last N finished games
 rate_window_secs: 10 # env-steps/sec plot averages over the last N seconds
 
+buffer_size: 100000
+
 temperature_schedule:
     - step: 500000
       tau: 1.0

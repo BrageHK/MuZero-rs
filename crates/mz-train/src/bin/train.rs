@@ -1,8 +1,6 @@
 use std::mem;
 
 use burn::module::AutodiffModule;
-use burn::tensor::Tensor;
-use burn::tensor::backend::AutodiffBackend;
 use burn::{Dispatch, DispatchDevice};
 use mz_rs::env::Environment;
 
@@ -22,7 +20,6 @@ use rand_distr::weighted::WeightedIndex;
 
 fn main() {
     type TrainB = Dispatch;
-    type StoreB = <TrainB as AutodiffBackend>::InnerBackend;
     type InferB = Dispatch;
 
     let mz_conf = MuZeroConfig::default();
@@ -46,9 +43,9 @@ fn main() {
             env.reset();
         }
 
-        let mut buffer = ReplayBuffer::<StoreB>::default();
+        let mut buffer = ReplayBuffer::new(&mz_conf);
 
-        let mut game_batch: Vec<Vec<BufferData<StoreB>>> =
+        let mut game_batch: Vec<Vec<BufferData>> =
             vec![Vec::new(); mz_conf.game_batch_size];
         let mut game_len_batch = vec![0usize; mz_conf.game_batch_size];
         let mut game_reward_batch = vec![0.0f32; mz_conf.game_batch_size];
@@ -62,7 +59,6 @@ fn main() {
             let tau = tau_for_step(&mz_conf.temperature_schedule, training_step);
 
             let obs = E::batch_state_tensor::<InferB>(&env_batch, &infer_device);
-            let obs_store = E::batch_state_tensor::<StoreB>(&env_batch, &device);
             let legal_masks: Vec<Vec<bool>> =
                 env_batch.iter().map(|env| env.legal_mask()).collect();
 
@@ -73,24 +69,22 @@ fn main() {
                 let dist = WeightedIndex::new(&search_result.distribution).unwrap();
                 let action = dist.sample(&mut rand::rng());
 
+                let state = env_batch[i].obs();
                 let result = env_batch[i].step(action);
 
                 game_batch[i].push(BufferData {
-                    state: obs_store.clone().slice(i..i + 1),
+                    state,
                     action,
                     value: search_result.value,
                     reward: result.reward as f32,
-                    policy: Tensor::<StoreB, 1>::from_floats(
-                        search_result.distribution.as_slice(),
-                        &device,
-                    )
-                    .unsqueeze_dim(0),
+                    policy: search_result.distribution.clone(),
+                    is_terminal: result.done,
                 });
 
                 game_reward_batch[i] += result.reward as f32;
 
                 if result.truncated || result.done {
-                    buffer.store_game(mem::take(&mut game_batch[i]));
+                    buffer.store_game(mem::take(&mut game_batch[i]), &mz_conf);
                     env_batch[i].reset();
                     game_len_batch[i] = 0;
                     tui.game_finished(game_reward_batch[i]);
@@ -99,7 +93,7 @@ fn main() {
             }
             tui.add_env_steps(
                 mz_conf.game_batch_size,
-                buffer.total_positions > mz_conf.training_batch_size,
+                buffer.states.len() > mz_conf.training_batch_size,
             );
 
             for _train_step in 0..training_steps {

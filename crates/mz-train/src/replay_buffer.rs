@@ -1,152 +1,174 @@
-use burn::{Tensor, tensor::backend::Backend};
+use std::collections::VecDeque;
+
 use fastrand::Rng;
 
 use crate::mz_config::MuZeroConfig;
 
 #[derive(Clone)]
-pub struct BufferData<B: Backend> {
-    pub state: Tensor<B, 2>,
+pub struct BufferData {
+    pub state: Vec<f32>,
     pub action: usize,
     pub value: f32,
     pub reward: f32,
-    pub policy: Tensor<B, 2>,
+    pub policy: Vec<f32>,
+    pub is_terminal: bool
 }
 
-pub struct ReplayBuffer<B: Backend> {
-    pub games: Vec<Vec<BufferData<B>>>,
-    cumulative_lengths: Vec<usize>,
-    pub total_positions: usize,
+pub struct ReplayBuffer {
+    pub states: VecDeque<BufferData>,
+    max_len: usize,
     rng: Rng,
 }
 
-impl<B: Backend> Default for ReplayBuffer<B> {
+impl Default for ReplayBuffer {
     fn default() -> Self {
         ReplayBuffer {
-            games: Vec::new(),
-            cumulative_lengths: Vec::new(),
-            total_positions: 0,
+            states: VecDeque::new(),
+            max_len: 100_000,
             rng: Rng::new(),
         }
     }
 }
 
-impl<B: Backend> ReplayBuffer<B> {
-    pub fn store_game(&mut self, game: Vec<BufferData<B>>) {
-        self.total_positions += game.len();
-        self.cumulative_lengths.push(self.total_positions);
-        self.games.push(game);
+impl ReplayBuffer {
+    pub fn new(conf: &MuZeroConfig) -> Self {
+        ReplayBuffer {
+            states: VecDeque::with_capacity(conf.buffer_size),
+            max_len: conf.buffer_size,
+            rng: Rng::new(),
+        }
+    }
+}
+
+impl ReplayBuffer {
+    pub fn store_game(&mut self, mut game: Vec<BufferData>, mz_config: &MuZeroConfig) {
+        if mz_config.is_twoplayer {
+            let mut last_reward = game.last().expect("Game should not be empty.").reward;
+            for state in game.iter_mut().rev() {
+                state.value = last_reward;
+                state.reward = 0.0;
+                last_reward = -last_reward;
+            }
+        }
+        self.states.extend(game);
+        while self.states.len() > self.max_len {
+            self.states.pop_front();
+        }
     }
 
-    pub fn sample_games(&mut self, mz_config: &MuZeroConfig) -> Vec<Vec<BufferData<B>>> {
+    pub fn sample_games(&mut self, mz_config: &MuZeroConfig) -> Vec<Vec<BufferData>> {
         (0..mz_config.training_batch_size)
             .map(|_| self.sample_single(mz_config))
             .collect()
     }
 
-    fn sample_single(&mut self, mz_config: &MuZeroConfig) -> Vec<BufferData<B>> {
-        let flat_idx = self.rng.usize(0..self.total_positions);
-        let game_idx = self
-            .cumulative_lengths
-            .partition_point(|&cum| cum <= flat_idx);
-        let game_start = if game_idx == 0 {
-            0
-        } else {
-            self.cumulative_lengths[game_idx - 1]
-        };
-        let pos = flat_idx - game_start;
-        let game = &self.games[game_idx];
+    fn sample_single(&mut self, mz_config: &MuZeroConfig) -> Vec<BufferData> {
+        if self.states.is_empty() {
+            return Vec::new();
+        }
+        let idx = self.rng.usize(0..self.states.len());
 
         let mut sequence = Vec::with_capacity(mz_config.unroll_steps);
-        let mut absorbing: Option<BufferData<B>> = None;
+        let mut absorbing: Option<BufferData> = None;
 
-        for i in 0..mz_config.unroll_steps {
+        for state_idx in idx..idx+mz_config.unroll_steps {
             if let Some(ref abs) = absorbing {
                 sequence.push(abs.clone());
                 continue;
             }
-            let idx = pos + i;
-            if idx >= game.len() {
-                let last = sequence.last().unwrap();
+            if state_idx >= self.states.len() {
                 let abs = BufferData {
-                    state: last.state.clone(),
-                    action: last.action,
                     value: 0.0,
                     reward: 0.0,
-                    policy: last.policy.clone(),
+                    ..sequence.last().expect("sequence has at least one state").clone()
                 };
-                absorbing = Some(abs.clone());
-                sequence.push(abs);
+                sequence.push(abs.clone());
+                absorbing = Some(abs);
+                continue;
+            }
+            let state = &self.states[state_idx];
+            if state.is_terminal {
+                let abs = BufferData {
+                    value: 0.0,
+                    reward: 0.0,
+                    ..state.clone()
+                };
+                absorbing = Some(abs);
+                sequence.push(state.clone());
             } else {
-                let value = n_step_value(game, idx, mz_config.n_steps, mz_config.discount);
-                sequence.push(BufferData {
-                    state: game[idx].state.clone(),
-                    action: game[idx].action,
+                let value = match mz_config.is_twoplayer {
+                    true => state.value,
+                    false => self.n_step_value(state_idx, mz_config),
+                };
+                let s = BufferData {
                     value,
-                    reward: game[idx].reward,
-                    policy: game[idx].policy.clone(),
-                });
+                    ..state.clone()
+                };
+                sequence.push(s);
             }
         }
 
         sequence
     }
+
+    fn n_step_value(
+        &self,
+        idx: usize,
+        mz_config: &MuZeroConfig
+    ) -> f32 {
+        let mut value = 0.0;
+        let mut reached = mz_config.n_steps;
+        let mut bootstrap = true;
+        for k in 0..mz_config.n_steps {
+            let curr_idx = idx + k;
+            if curr_idx >= self.states.len() {
+                reached = k;
+                bootstrap = false;
+                break;
+            }
+            let state = &self.states[curr_idx];
+            value += mz_config.discount.powi(k as i32) * state.reward;
+            if state.is_terminal {
+                reached = k;
+                bootstrap = false;
+                break;
+            }
+        }
+        let bootstrap_idx = idx + reached;
+        if bootstrap && bootstrap_idx < self.states.len() && !self.states[bootstrap_idx].is_terminal {
+            value += mz_config.discount.powi(reached as i32) * self.states[bootstrap_idx].value;
+        }
+        value
+    }
 }
 
-fn n_step_value<B: Backend>(
-    game: &[BufferData<B>],
-    idx: usize,
-    n_steps: usize,
-    discount: f32,
-) -> f32 {
-    let mut value = 0.0;
-    for k in 0..n_steps {
-        let ridx = idx + k;
-        if ridx >= game.len() {
-            break;
-        }
-        value += discount.powi(k as i32) * game[ridx].reward;
-    }
-    let bootstrap_idx = idx + n_steps;
-    if bootstrap_idx < game.len() {
-        value += discount.powi(n_steps as i32) * game[bootstrap_idx].value;
-    }
-    value
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use burn::{backend::Wgpu, tensor::Shape};
-    type B = Wgpu<f32, i32>;
 
-    fn create_game<B: Backend>(n: usize, device: &B::Device) -> Vec<BufferData<B>> {
+    fn create_game(n: usize) -> Vec<BufferData> {
         (0..n)
-            .map(|_| BufferData {
-                state: Tensor::<B, 2>::random(
-                    Shape::new([1, 4]),
-                    burn::tensor::Distribution::Uniform(-1., 1.),
-                    device,
-                ),
+            .map(|i| BufferData {
+                state: vec![0.0; 4],
                 action: 0,
                 value: 0.0,
                 reward: 0.0,
-                policy: Tensor::<B, 2>::random(
-                    Shape::new([1, 4]),
-                    burn::tensor::Distribution::Uniform(0., 1.),
-                    device,
-                ),
+                policy: vec![0.25; 4],
+                is_terminal: i == n - 1,
             })
             .collect()
     }
 
     #[test]
     fn store_games() {
-        let mut mz_config = MuZeroConfig::default();
-        mz_config.training_batch_size = 1;
-        let device = Default::default();
-        let mut buffer = ReplayBuffer::<B>::default();
-        // Game shorter than unroll_steps: last step always absorbing
-        buffer.store_game(create_game::<B>(3, &device));
+        let mz_config = MuZeroConfig { 
+            training_batch_size: 1, 
+            is_twoplayer: false, 
+            ..Default::default() 
+        };
+        let mut buffer = ReplayBuffer::default();
+        buffer.store_game(create_game(3), &mz_config);
         assert_eq!(
             buffer.sample_games(&mz_config)[0].len(),
             mz_config.unroll_steps
@@ -159,7 +181,7 @@ mod tests {
             buffer.sample_games(&mz_config)[0][mz_config.unroll_steps - 1].reward,
             0.
         );
-        buffer.store_game(create_game::<B>(100, &device));
+        buffer.store_game(create_game(100), &mz_config);
         for _ in 0..4 {
             assert_eq!(
                 buffer.sample_games(&mz_config)[0].len(),
@@ -170,11 +192,13 @@ mod tests {
 
     #[test]
     fn store_1_game() {
-        let mut mz_config = MuZeroConfig::default();
-        mz_config.training_batch_size = 1;
-        let device = Default::default();
-        let mut buffer = ReplayBuffer::<B>::default();
-        buffer.store_game(create_game::<B>(1, &device));
+        let mz_config = MuZeroConfig { 
+            training_batch_size: 1, 
+            is_twoplayer: false, 
+            ..Default::default() 
+        };
+        let mut buffer = ReplayBuffer::default();
+        buffer.store_game(create_game(1), &mz_config);
         for _ in 0..3 {
             assert_eq!(
                 buffer.sample_games(&mz_config)[0].len(),

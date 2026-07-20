@@ -84,6 +84,7 @@ pub struct MuZeroConfig {
     pub root_exploration_fraction: f32,
     pub total_steps: usize,
     pub train_ratio: f32,
+    pub buffer_size: usize,
     // Avg-reward metric averages over the last N finished games.
     #[serde(default = "default_avg_window")]
     pub avg_window: usize,

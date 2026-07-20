@@ -12,7 +12,7 @@ pub fn train<B: AutodiffBackend, N, O>(
     mut agent: N,
     optimizer: &mut O,
     mz_conf: &MuZeroConfig,
-    buffer: &mut ReplayBuffer<B::InnerBackend>,
+    buffer: &mut ReplayBuffer,
     lr: f64,
     device: &B::Device,
 ) -> (N, Option<f32>)
@@ -20,7 +20,7 @@ where
     N: MuZeroNets<B> + AutodiffModule<B>,
     O: Optimizer<N, B>,
 {
-    if buffer.total_positions <= mz_conf.training_batch_size {
+    if buffer.states.len() <= mz_conf.training_batch_size {
         return (agent, None);
     }
 
@@ -36,7 +36,7 @@ where
 
         let target_policy: Vec<Tensor<B, 2>> = sequence
             .iter()
-            .map(|game| Tensor::<B, 2>::from_inner(game[step].policy.clone()))
+            .map(|game| Tensor::<B, 1>::from_floats(game[step].policy.as_slice(), device).unsqueeze())
             .collect();
         let target_policy = Tensor::cat(target_policy, 0);
 
@@ -44,7 +44,7 @@ where
             None => {
                 let obs: Vec<Tensor<B, 2>> = sequence
                     .iter()
-                    .map(|game| Tensor::<B, 2>::from_inner(game[0].state.clone()))
+                    .map(|game| Tensor::<B, 1>::from_floats(game[0].state.as_slice(), device).unsqueeze())
                     .collect();
                 let obs = Tensor::cat(obs, 0);
                 agent.initial_inference(obs)

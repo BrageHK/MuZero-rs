@@ -30,7 +30,12 @@ const ACTION_SPACE: usize = BOARD * BOARD + 1; // 64 moves + pass
 type B = Dispatch;
 
 fn othello_conf() -> MuZeroConfig {
-    let mut conf = MuZeroConfig::default();
+    let mut conf = MuZeroConfig { 
+        action_space: ACTION_SPACE, 
+        obs_dim: OBS_CHANNELS * BOARD * BOARD, 
+        num_simulations: NUM_SIMULATIONS, 
+        ..Default::default() 
+    };
     conf.action_space = ACTION_SPACE;
     conf.obs_dim = OBS_CHANNELS * BOARD * BOARD;
     conf.num_simulations = NUM_SIMULATIONS;
