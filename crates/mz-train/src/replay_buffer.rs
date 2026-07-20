@@ -11,7 +11,8 @@ pub struct BufferData {
     pub value: f32,
     pub reward: f32,
     pub policy: Vec<f32>,
-    pub is_terminal: bool
+    pub is_terminal: bool,
+    pub is_boundary: bool,
 }
 
 pub struct ReplayBuffer {
@@ -70,8 +71,9 @@ impl ReplayBuffer {
 
         let mut sequence = Vec::with_capacity(mz_config.unroll_steps);
         let mut absorbing: Option<BufferData> = None;
+        let uniform_policy = vec![1.0 / mz_config.action_space as f32; mz_config.action_space];
 
-        for state_idx in idx..idx+mz_config.unroll_steps {
+        for state_idx in idx..idx + mz_config.unroll_steps {
             if let Some(ref abs) = absorbing {
                 sequence.push(abs.clone());
                 continue;
@@ -80,6 +82,7 @@ impl ReplayBuffer {
                 let abs = BufferData {
                     value: 0.0,
                     reward: 0.0,
+                    policy: uniform_policy.clone(),
                     ..sequence.last().expect("sequence has at least one state").clone()
                 };
                 sequence.push(abs.clone());
@@ -87,24 +90,21 @@ impl ReplayBuffer {
                 continue;
             }
             let state = &self.states[state_idx];
-            if state.is_terminal {
-                let abs = BufferData {
+            let value = match mz_config.is_twoplayer {
+                true => state.value,
+                false => self.n_step_value(state_idx, mz_config),
+            };
+            sequence.push(BufferData {
+                value,
+                ..state.clone()
+            });
+            if state.is_boundary {
+                absorbing = Some(BufferData {
                     value: 0.0,
                     reward: 0.0,
+                    policy: uniform_policy.clone(),
                     ..state.clone()
-                };
-                absorbing = Some(abs);
-                sequence.push(state.clone());
-            } else {
-                let value = match mz_config.is_twoplayer {
-                    true => state.value,
-                    false => self.n_step_value(state_idx, mz_config),
-                };
-                let s = BufferData {
-                    value,
-                    ..state.clone()
-                };
-                sequence.push(s);
+                });
             }
         }
 
@@ -117,26 +117,26 @@ impl ReplayBuffer {
         mz_config: &MuZeroConfig
     ) -> f32 {
         let mut value = 0.0;
-        let mut reached = mz_config.n_steps;
-        let mut bootstrap = true;
         for k in 0..mz_config.n_steps {
             let curr_idx = idx + k;
             if curr_idx >= self.states.len() {
-                reached = k;
-                bootstrap = false;
-                break;
+                return value;
             }
             let state = &self.states[curr_idx];
-            value += mz_config.discount.powi(k as i32) * state.reward;
             if state.is_terminal {
-                reached = k;
-                bootstrap = false;
-                break;
+                value += mz_config.discount.powi(k as i32) * state.reward;
+                return value;
             }
+            if state.is_boundary {
+                value += mz_config.discount.powi(k as i32) * state.value;
+                return value;
+            }
+            value += mz_config.discount.powi(k as i32) * state.reward;
         }
-        let bootstrap_idx = idx + reached;
-        if bootstrap && bootstrap_idx < self.states.len() && !self.states[bootstrap_idx].is_terminal {
-            value += mz_config.discount.powi(reached as i32) * self.states[bootstrap_idx].value;
+        let bootstrap_idx = idx + mz_config.n_steps;
+        if bootstrap_idx < self.states.len() && !self.states[bootstrap_idx].is_terminal {
+            value += mz_config.discount.powi(mz_config.n_steps as i32)
+                * self.states[bootstrap_idx].value;
         }
         value
     }
@@ -156,6 +156,7 @@ mod tests {
                 reward: 0.0,
                 policy: vec![0.25; 4],
                 is_terminal: i == n - 1,
+                is_boundary: i == n - 1,
             })
             .collect()
     }

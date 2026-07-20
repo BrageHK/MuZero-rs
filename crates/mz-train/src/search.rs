@@ -10,6 +10,7 @@ use crate::{mz_config::MuZeroConfig, utils::QNormalization};
 
 pub struct SearchReturn {
     pub distribution: Vec<f32>,
+    pub policy_target: Vec<f32>,
     pub value: f32,
     pub best_action: usize,
 }
@@ -22,6 +23,7 @@ struct BatchNode {
     cumulative_value: f32,
     reward: f32,
     policy: f32,
+    legal: bool,
 }
 
 /// Returns a Vec of SearchReturn. Batch items with a single legal action skip
@@ -78,6 +80,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         let mut distribution = vec![0.0f32; action_space];
         distribution[action] = 1.0;
         SearchReturn {
+            policy_target: distribution.clone(),
             distribution,
             value: root_values[i],
             best_action: action,
@@ -94,7 +97,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         (0..n_active).map(|_| QNormalization::default()).collect();
 
     let mut node_batch: Vec<Vec<BatchNode>> = (0..n_active)
-        .map(|_| Vec::with_capacity((mz_conf.num_simulations + 1) * action_space))
+        .map(|_| Vec::with_capacity(1 + (mz_conf.num_simulations + 1) * action_space))
         .collect();
 
     let root_hidden_states = if n_active == batch_size {
@@ -121,13 +124,14 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         .for_each(|(i, nodes)| {
             let row = active[i];
             nodes.push(BatchNode {
-                visits: 1,
+                visits: 0,
                 action: 0, // This action is irrelevant
                 hidden_row: i,
                 first_child: 1,
-                cumulative_value: root_values[row],
+                cumulative_value: 0.,
                 reward: root_rewards[row],
                 policy: 0.,
+                legal: true,
             });
 
             let policy_row = &root_policies[row * action_space..(row + 1) * action_space];
@@ -142,6 +146,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
                     cumulative_value: 0.,
                     reward: 0.,
                     policy,
+                    legal: mask.is_none_or(|m| m[action]),
                 });
             }
         });
@@ -175,16 +180,16 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
                     let mut best_puct = f32::NEG_INFINITY;
                     let mut best_node = 0usize;
                     for (child_idx, child) in nodes.iter().enumerate().skip(curr_node.first_child).take(action_space) {
+                        if !child.legal {
+                            continue;
+                        }
                         let q_value = match child.visits {
                             0 => 0.,
-                            _ => {
+                            _ => norm.normalize(
                                 child.reward
-                                    + discount
-                                        * norm.normalize(
-                                            value_sign * child.cumulative_value
-                                                / child.visits as f32,
-                                        )
-                            }
+                                    + discount * value_sign * child.cumulative_value
+                                        / child.visits as f32,
+                            ),
                         };
                         let puct_value =
                             q_value + child.policy * exploration / (1 + child.visits) as f32;
@@ -253,6 +258,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
                         cumulative_value: 0.,
                         reward: 0.,
                         policy,
+                        legal: true,
                     });
                 }
 
@@ -268,7 +274,9 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
                     curr_node.visits += 1;
                     curr_node.cumulative_value += back_value;
                     norm.update(
-                        value_sign * curr_node.cumulative_value / curr_node.visits as f32,
+                        curr_node.reward
+                            + discount * value_sign * curr_node.cumulative_value
+                                / curr_node.visits as f32,
                     );
                     back_value = curr_node.reward + discount * value_sign * back_value;
                 }
@@ -293,41 +301,58 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
 fn extract_result(nodes: &[BatchNode], action_space: usize, tau: f32) -> SearchReturn {
     let root_node = &nodes[0];
     let value = root_node.cumulative_value / (root_node.visits as f32);
-    let mut visit_distribution = vec![0.0f32; action_space];
     let children = root_node.first_child..root_node.first_child + action_space;
 
-    if tau == 0.0 {
-        let best_child_idx = children
-            .max_by_key(|child_idx| nodes[*child_idx].visits)
-            .expect("There are no child nodes.");
-        let best_action = nodes[best_child_idx].action;
-        visit_distribution[best_action] = 1.0;
-        SearchReturn {
-            distribution: visit_distribution,
-            value,
-            best_action,
+    let total_visits: f32 = children
+        .clone()
+        .filter(|&c| nodes[c].legal)
+        .map(|c| nodes[c].visits as f32)
+        .sum();
+
+    let mut policy_target = vec![0.0f32; action_space];
+    let mut best_action = 0;
+    let mut highest_visits = 0;
+    for child_idx in children.clone() {
+        let child = &nodes[child_idx];
+        if !child.legal {
+            continue;
         }
+        if child.visits > highest_visits {
+            highest_visits = child.visits;
+            best_action = child.action;
+        }
+        if total_visits > 0.0 {
+            policy_target[child.action] = child.visits as f32 / total_visits;
+        }
+    }
+
+    let mut distribution = vec![0.0f32; action_space];
+    if tau == 0.0 {
+        distribution[best_action] = 1.0;
     } else {
         let visit_sum: f32 = children
             .clone()
-            .map(|child_idx| (nodes[child_idx].visits as f32).powf(1.0 / tau))
+            .filter(|&c| nodes[c].legal)
+            .map(|c| (nodes[c].visits as f32).powf(1.0 / tau))
             .sum();
-        let mut highest_visits = 0;
-        let mut best_action = 0;
-        for child_idx in children {
-            let action = nodes[child_idx].action;
-            let child_visits = nodes[child_idx].visits;
-            if child_visits > highest_visits {
-                highest_visits = child_visits;
-                best_action = action;
+        if visit_sum > 0.0 {
+            for child_idx in children {
+                let child = &nodes[child_idx];
+                if child.legal {
+                    distribution[child.action] =
+                        (child.visits as f32).powf(1.0 / tau) / visit_sum;
+                }
             }
-            visit_distribution[action] = (child_visits as f32).powf(1.0 / tau) / visit_sum;
+        } else {
+            distribution[best_action] = 1.0;
         }
-        SearchReturn {
-            distribution: visit_distribution,
-            value,
-            best_action,
-        }
+    }
+
+    SearchReturn {
+        distribution,
+        policy_target,
+        value,
+        best_action,
     }
 }
 
@@ -340,7 +365,7 @@ fn exploration_factor(parent_visits: usize) -> f32 {
 
 fn root_priors(policy: &[f32], mask: Option<&[bool]>, alpha: f32, frac: f32) -> Vec<f32> {
     let mask_legal_len = match mask {
-        Some(mask) => mask.iter().filter(|&&m| m).count(),
+        Some(mask) => mask.iter().filter(|&&m| m).count().max(1),
         None => policy.len(),
     };
     let dirichlet = Dirichlet::new(vec![alpha; mask_legal_len].as_slice()).unwrap();
