@@ -1,11 +1,3 @@
-// Compares MuZero inference speed on ndarray (CPU) vs rocm (GPU) across many
-// batch sizes, for both network families (ResNet and Linear/MLP), so you can
-// see where GPU dispatch overhead stops dominating and the GPU starts winning.
-//
-// Build/run with rocm compiled in (needs an AMD GPU + ROCm drivers):
-//   cargo run --release --bin resnet_backend_bench --features rocm
-// Without --features rocm, only the ndarray side runs.
-
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 

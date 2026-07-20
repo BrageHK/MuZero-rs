@@ -1,12 +1,11 @@
 use burn::Dispatch;
-use burn::tensor::Tensor;
 use gif::{Encoder, Frame, Repeat};
 use gym_rs::utils::renderer::{RenderColor, RenderFrame, RenderMode};
 use mz_rs::env::Environment;
 use mz_rs::utils::select_device;
 use mz_rs::{
     agent::MlpNets, env::cartpole::env::CartPoleWrapper, mz_config::MuZeroConfig,
-    search::search_serial::search,
+    search::batched_search,
 };
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::*;
@@ -36,10 +35,10 @@ fn save_gif(frames: &[RenderFrame], path: &str) {
 }
 
 fn main() {
-    // Backend picked at runtime from config (see BackendChoice).
     type B = Dispatch;
 
-    let mz_conf = MuZeroConfig::new::<B>("configs/config_inference.yaml");
+    let mut mz_conf = MuZeroConfig::new::<B>("configs/config_inference.yaml");
+    mz_conf.root_exploration_fraction = 0.0;
     assert!(
         mz_conf.init_checkpoint.is_some(),
         "Set init_checkpoint in config.yaml (e.g. \"model/best\") to play from a trained model"
@@ -60,8 +59,10 @@ fn main() {
         loop {
             let obs = env.state_tensor::<B>(&device);
 
-            let (dist, _value, _action) = search(obs, &mz_conf, &agent, 0.10);
-            let action = WeightedIndex::new(&dist).unwrap().sample(&mut rng);
+            let results = batched_search(obs, None, &mz_conf, &agent, 0.10);
+            let action = WeightedIndex::new(&results[0].distribution)
+                .unwrap()
+                .sample(&mut rng);
             let result = env.step(action);
             total_reward += result.reward;
             steps += 1;

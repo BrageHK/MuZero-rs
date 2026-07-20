@@ -1,10 +1,9 @@
 use std::fs;
 
-use burn::tensor::backend::{AutodiffBackend, Backend};
-use burn::{optim::Optimizer, record::CompactRecorder};
+use burn::record::CompactRecorder;
+use burn::tensor::backend::Backend;
 use serde::{Deserialize, Serialize};
 
-use crate::mz_config::OptimChoice::{Adam, Sdg};
 use crate::{
     env::Environment,
     mz_config::NetworkType::{Linear, ResNet},
@@ -17,7 +16,7 @@ use crate::{
 pub enum OptimChoice {
     Adam,
     AdamW,
-    Sdg,
+    Sgd,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -85,14 +84,16 @@ pub struct MuZeroConfig {
     pub root_exploration_fraction: f32,
     pub total_steps: usize,
     pub train_ratio: f32,
+    // Avg-reward metric averages over the last N finished games.
+    #[serde(default = "default_avg_window")]
+    pub avg_window: usize,
+    // Env-steps/sec metric averages over the last N seconds.
+    #[serde(default = "default_rate_window_secs")]
+    pub rate_window_secs: f32,
     pub inference_update_interval: usize,
     pub checkpoint_interval: usize,
 
-    pub max_thread_wait: f32,
     // None = set automatically
-    pub num_search_threads: Option<usize>,
-    pub init_batch_size: usize,
-    pub rec_batch_size: usize,
     pub min_rayon_threads: usize,
 
     // Original muzero paper uses t = 1 first 500k steps, t = 0.5 for next 250k and 0.25 for remaining
@@ -113,6 +114,16 @@ pub struct MuZeroConfig {
     pub action_space: usize,
     #[serde(default)]
     pub obs_dim: usize,
+    #[serde(default)]
+    pub is_twoplayer: bool,
+}
+
+fn default_avg_window() -> usize {
+    100
+}
+
+fn default_rate_window_secs() -> f32 {
+    10.0
 }
 
 impl Default for MuZeroConfig {
@@ -152,6 +163,7 @@ fn get_conf(file_content: String) -> MuZeroConfig {
         let info = env.get_info();
         conf.action_space = info.action_size;
         conf.obs_dim = info.obs_dim();
+        conf.is_twoplayer = info.num_players > 1;
     });
     conf
 }
@@ -167,12 +179,6 @@ impl MuZeroConfig {
         self.resnet
             .as_ref()
             .expect("network_type: ResNet requires a `resnet:` section in the config")
-    }
-
-    /// `num_search_threads`, defaulting to available cores when unset.
-    pub fn search_threads(&self) -> usize {
-        self.num_search_threads
-            .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
     }
 
     /// Fresh random init of a network family, e.g. `mz_conf.init::<B, MlpNets<B>>(&device)`.

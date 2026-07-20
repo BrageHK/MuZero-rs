@@ -1,18 +1,21 @@
+use std::mem;
+
 use burn::module::AutodiffModule;
-use burn::optim::AdamConfig;
 use burn::tensor::Tensor;
 use burn::tensor::backend::AutodiffBackend;
 use burn::{Dispatch, DispatchDevice};
-
 use mz_rs::env::Environment;
+
 use mz_rs::agent::MlpNets;
-use mz_rs::mz_config::{MuZeroConfig, NetworkType};
+use mz_rs::mz_config::MuZeroConfig;
 use mz_rs::networks::nets_to_backend;
-use mz_rs::replay_buffer::BufferData;
-use mz_rs::search::search_serial::search;
+use mz_rs::optim::AnyOptimizer;
+use mz_rs::replay_buffer::{BufferData, ReplayBuffer};
+use mz_rs::search::batched_search;
 use mz_rs::train::train;
-use mz_rs::utils::select_device;
-use mz_rs::{env::cartpole::env::CartPoleWrapper, replay_buffer::ReplayBuffer};
+use mz_rs::tui_metrics::TrainingTui;
+use mz_rs::utils::{select_device, tau_for_step};
+use mz_rs::with_env;
 
 use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;
@@ -23,12 +26,6 @@ fn main() {
     type InferB = Dispatch;
 
     let mz_conf = MuZeroConfig::default();
-    if let NetworkType::ResNet = mz_conf.network_type {
-        panic!(
-            "network_type: ResNet has no compatible environment yet \
-             (cartpole obs is a flat vector) — use network_type: Linear"
-        );
-    }
 
     // Plain device for buffer/store tensors, autodiff-wrapped for the model.
     let device = select_device(mz_conf.training_backend);
@@ -36,63 +33,76 @@ fn main() {
     let infer_device = select_device(mz_conf.inference_backend);
 
     let mut agent: MlpNets<TrainB> = mz_conf.init_agent(&train_device);
-    let mut optimizer = AdamConfig::new().init::<TrainB, MlpNets<TrainB>>();
+    let mut optimizer = AnyOptimizer::<TrainB, MlpNets<TrainB>>::new(&mz_conf);
     let mut inference_agent: MlpNets<InferB> =
         nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
-    let mut env = CartPoleWrapper::default();
 
-    let mut buffer = ReplayBuffer::<StoreB>::default();
+    let training_steps = (mz_conf.game_batch_size as f32 / mz_conf.training_batch_size as f32
+        * mz_conf.train_ratio) as i32;
 
-    let mut game = Vec::new();
-
-    let mut game_len = 0usize;
-    let mut tau_idx = 0usize;
-    let mut tau = mz_conf.temperature_schedule[tau_idx].tau;
-
-    for training_step in 0..mz_conf.total_steps {
-        game_len += 1;
-        let obs = env.state_tensor::<InferB>(&infer_device);
-        let obs_store = env.state_tensor::<StoreB>(&device);
-
-        match mz_conf.temperature_schedule[tau_idx].step {
-            Some(n) => {
-                if training_step > n {
-                    tau_idx += 1;
-                    tau = mz_conf.temperature_schedule[tau_idx].tau;
-                }
-            }
-            None => (),
+    with_env!(mz_conf, E => {
+        let mut env_batch = vec![E::default(); mz_conf.game_batch_size];
+        for env in env_batch.iter_mut() {
+            env.reset();
         }
 
-        println!("Hello search");
-        let (visit_distribution, value, _action) = search(obs, &mz_conf, &inference_agent, tau);
-        println!("bye search");
-        let dist = WeightedIndex::new(&visit_distribution).unwrap();
-        let action = dist.sample(&mut rand::rng());
+        let mut buffer = ReplayBuffer::<StoreB>::default();
 
-        let result = env.step(action);
+        let mut game_batch: Vec<Vec<BufferData<StoreB>>> =
+            vec![Vec::new(); mz_conf.game_batch_size];
+        let mut game_len_batch = vec![0usize; mz_conf.game_batch_size];
+        let mut game_reward_batch = vec![0.0f32; mz_conf.game_batch_size];
 
-        let buffer_data = BufferData {
-            state: obs_store,
-            action,
-            value,
-            reward: result.reward as f32,
-            policy: Tensor::<StoreB, 1>::from_floats(visit_distribution.as_slice(), &device)
-                .unsqueeze_dim(0),
-        };
+        let mut tui = TrainingTui::new(&mz_conf);
 
-        game.push(buffer_data);
+        for training_step in 0..mz_conf.total_steps {
+            if tui.should_stop() {
+                break;
+            }
+            let tau = tau_for_step(&mz_conf.temperature_schedule, training_step);
 
-        if result.truncated || result.done {
-            println!("Died after {} steps", game_len);
-            buffer.store_game(game.clone());
-            env.reset();
-            game.clear();
-            game_len = 0;
-            println!("N games: {}", buffer.games.len());
+            let obs = E::batch_state_tensor::<InferB>(&env_batch, &infer_device);
+            let obs_store = E::batch_state_tensor::<StoreB>(&env_batch, &device);
+            let legal_masks: Vec<Vec<bool>> =
+                env_batch.iter().map(|env| env.legal_mask()).collect();
 
-            for train_step in 0..mz_conf.train_ratio as i32 {
-                print!("Training step: {train_step}");
+            let results = batched_search(obs, Some(&legal_masks), &mz_conf, &inference_agent, tau);
+
+            for (i, search_result) in results.iter().enumerate() {
+                game_len_batch[i] += 1;
+                let dist = WeightedIndex::new(&search_result.distribution).unwrap();
+                let action = dist.sample(&mut rand::rng());
+
+                let result = env_batch[i].step(action);
+
+                game_batch[i].push(BufferData {
+                    state: obs_store.clone().slice(i..i + 1),
+                    action,
+                    value: search_result.value,
+                    reward: result.reward as f32,
+                    policy: Tensor::<StoreB, 1>::from_floats(
+                        search_result.distribution.as_slice(),
+                        &device,
+                    )
+                    .unsqueeze_dim(0),
+                });
+
+                game_reward_batch[i] += result.reward as f32;
+
+                if result.truncated || result.done {
+                    buffer.store_game(mem::take(&mut game_batch[i]));
+                    env_batch[i].reset();
+                    game_len_batch[i] = 0;
+                    tui.game_finished(game_reward_batch[i]);
+                    game_reward_batch[i] = 0.0;
+                }
+            }
+            tui.add_env_steps(
+                mz_conf.game_batch_size,
+                buffer.total_positions > mz_conf.training_batch_size,
+            );
+
+            for _train_step in 0..training_steps {
                 let _loss;
                 (agent, _loss) = train(
                     agent,
@@ -103,7 +113,12 @@ fn main() {
                     &train_device,
                 );
             }
+            tui.add_train_steps(training_steps as usize);
             inference_agent = nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
+
+            tui.render(training_step + 1);
         }
-    }
+
+        tui.close();
+    });
 }

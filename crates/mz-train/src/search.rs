@@ -24,7 +24,8 @@ struct BatchNode {
     policy: f32,
 }
 
-/// Returns a Vec of SearchReturn. This function will crash if there is only 1 legal action.
+/// Returns a Vec of SearchReturn. Batch items with a single legal action skip
+/// the search and immediately return that action with the network's root value.
 pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     observations: Tensor<B, 2>,
     legal_masks: Option<&[Vec<bool>]>,
@@ -36,26 +37,30 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     let device = observations.device();
     let discount = mz_conf.discount;
     let action_space = mz_conf.action_space;
+    let value_sign = if mz_conf.is_twoplayer { -1.0f32 } else { 1.0f32 };
 
-    let mut norms: Vec<QNormalization> =
-        (0..batch_size).map(|_| QNormalization::default()).collect();
-
-    let mut node_batch: Vec<Vec<BatchNode>> = (0..batch_size)
-        .map(|_| Vec::with_capacity((mz_conf.num_simulations + 1) * action_space))
+    let forced_actions: Vec<Option<usize>> = match legal_masks {
+        Some(masks) => masks
+            .iter()
+            .map(|mask| {
+                let mut legal = mask.iter().enumerate().filter(|&(_, &l)| l).map(|(a, _)| a);
+                match (legal.next(), legal.next()) {
+                    (Some(action), None) => Some(action),
+                    _ => None,
+                }
+            })
+            .collect(),
+        None => vec![None; batch_size],
+    };
+    let active: Vec<usize> = (0..batch_size)
+        .filter(|&i| forced_actions[i].is_none())
         .collect();
+    let n_active = active.len();
 
     let (root_hidden_states, root_rewards, root_values, root_policies) =
         mz_agent.initial_inference(observations);
     let alpha = mz_conf.dirichlet_noise;
     let frac = mz_conf.root_exploration_fraction;
-
-    let hidden_dim = root_hidden_states.dims()[1];
-    let mut arena = Tensor::<B, 2>::zeros(
-        [(mz_conf.num_simulations + 1) * batch_size, hidden_dim],
-        &device,
-    );
-    arena = arena.slice_assign([0..batch_size], root_hidden_states);
-    let mut arena_len = batch_size;
 
     let [root_rewards, root_values, root_policies] = Transaction::default()
         .register(root_rewards)
@@ -69,23 +74,64 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     let root_values = root_values.into_vec::<f32>().unwrap();
     let root_policies = root_policies.into_vec::<f32>().unwrap();
 
+    let forced_result = |i: usize, action: usize| {
+        let mut distribution = vec![0.0f32; action_space];
+        distribution[action] = 1.0;
+        SearchReturn {
+            distribution,
+            value: root_values[i],
+            best_action: action,
+        }
+    };
+
+    if n_active == 0 {
+        return (0..batch_size)
+            .map(|i| forced_result(i, forced_actions[i].unwrap()))
+            .collect();
+    }
+
+    let mut norms: Vec<QNormalization> =
+        (0..n_active).map(|_| QNormalization::default()).collect();
+
+    let mut node_batch: Vec<Vec<BatchNode>> = (0..n_active)
+        .map(|_| Vec::with_capacity((mz_conf.num_simulations + 1) * action_space))
+        .collect();
+
+    let root_hidden_states = if n_active == batch_size {
+        root_hidden_states
+    } else {
+        let active_rows: Vec<i64> = active.iter().map(|&i| i as i64).collect();
+        let idx_tensor =
+            Tensor::<B, 1, Int>::from_data(TensorData::from(active_rows.as_slice()), &device);
+        root_hidden_states.select(0, idx_tensor)
+    };
+
+    let hidden_dim = root_hidden_states.dims()[1];
+    let mut arena = Tensor::<B, 2>::zeros(
+        [(mz_conf.num_simulations + 1) * n_active, hidden_dim],
+        &device,
+    );
+    arena = arena.slice_assign(0..n_active, root_hidden_states);
+    let mut arena_len = n_active;
+
     node_batch
         .par_iter_mut()
         .with_min_len(mz_conf.min_rayon_threads)
         .enumerate()
         .for_each(|(i, nodes)| {
+            let row = active[i];
             nodes.push(BatchNode {
                 visits: 1,
                 action: 0, // This action is irrelevant
                 hidden_row: i,
                 first_child: 1,
-                cumulative_value: root_values[i],
-                reward: root_rewards[i],
+                cumulative_value: root_values[row],
+                reward: root_rewards[row],
                 policy: 0.,
             });
 
-            let policy_row = &root_policies[i * action_space..(i + 1) * action_space];
-            let mask = legal_masks.map(|masks| masks[i].as_slice());
+            let policy_row = &root_policies[row * action_space..(row + 1) * action_space];
+            let mask = legal_masks.map(|masks| masks[row].as_slice());
             let priors = root_priors(policy_row, mask, alpha, frac);
             for (action, &policy) in priors.iter().enumerate() {
                 nodes.push(BatchNode {
@@ -100,14 +146,14 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
             }
         });
 
-    let mut path_batch: Vec<Vec<usize>> = (0..batch_size).map(|_| Vec::new()).collect();
-    let mut parent_rows: Vec<i64> = Vec::with_capacity(batch_size);
-    let mut actions: Vec<i64> = Vec::with_capacity(batch_size);
+    let mut path_batch: Vec<Vec<usize>> = (0..n_active).map(|_| Vec::new()).collect();
+    let mut parent_rows: Vec<i64> = Vec::with_capacity(n_active);
+    let mut actions: Vec<i64> = Vec::with_capacity(n_active);
 
     for _sim_step in 0..mz_conf.num_simulations {
         node_batch
             .par_iter()
-            .zip(norms.par_iter_mut())
+            .zip(norms.par_iter())
             .zip(path_batch.par_iter_mut())
             .with_min_len(mz_conf.min_rayon_threads)
             .map(|((nodes, norm), path)| {
@@ -128,11 +174,17 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
                     // Find the best child
                     let mut best_puct = f32::NEG_INFINITY;
                     let mut best_node = 0usize;
-                    for child_idx in curr_node.first_child..curr_node.first_child + action_space {
-                        let child = &nodes[child_idx];
+                    for (child_idx, child) in nodes.iter().enumerate().skip(curr_node.first_child).take(action_space) {
                         let q_value = match child.visits {
                             0 => 0.,
-                            _ => norm.get_q(child.cumulative_value / child.visits as f32),
+                            _ => {
+                                child.reward
+                                    + discount
+                                        * norm.normalize(
+                                            value_sign * child.cumulative_value
+                                                / child.visits as f32,
+                                        )
+                            }
                         };
                         let puct_value =
                             q_value + child.policy * exploration / (1 + child.visits) as f32;
@@ -166,7 +218,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         let (new_hs, new_rewards, new_values, new_policies) =
             mz_agent.recurrent_inference(hidden_batch, action_tensor, action_space);
 
-        arena = arena.slice_assign([arena_len..arena_len + batch_size], new_hs);
+        arena = arena.slice_assign(arena_len..arena_len + n_active, new_hs);
 
         let [new_rewards, new_values, new_policies] = Transaction::default()
             .register(new_rewards)
@@ -184,9 +236,10 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         node_batch
             .par_iter_mut()
             .zip(path_batch.par_iter())
+            .zip(norms.par_iter_mut())
             .with_min_len(mz_conf.min_rayon_threads)
             .enumerate()
-            .for_each(|(i, (nodes, path))| {
+            .for_each(|(i, ((nodes, path), norm))| {
                 let leaf_idx = *path.last().unwrap();
 
                 let nodes_len = nodes.len();
@@ -214,15 +267,26 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
                     let curr_node = &mut nodes[node_idx];
                     curr_node.visits += 1;
                     curr_node.cumulative_value += back_value;
-                    back_value = curr_node.reward + discount * back_value;
+                    norm.update(
+                        value_sign * curr_node.cumulative_value / curr_node.visits as f32,
+                    );
+                    back_value = curr_node.reward + discount * value_sign * back_value;
                 }
             });
 
-        arena_len += batch_size;
+        arena_len += n_active;
     }
 
+    let mut tree_idx = 0;
     (0..batch_size)
-        .map(|i| extract_result(&node_batch[i], action_space, tau))
+        .map(|i| match forced_actions[i] {
+            Some(action) => forced_result(i, action),
+            None => {
+                let result = extract_result(&node_batch[tree_idx], action_space, tau);
+                tree_idx += 1;
+                result
+            }
+        })
         .collect()
 }
 
@@ -281,12 +345,24 @@ fn root_priors(policy: &[f32], mask: Option<&[bool]>, alpha: f32, frac: f32) -> 
     };
     let dirichlet = Dirichlet::new(vec![alpha; mask_legal_len].as_slice()).unwrap();
     let noise = dirichlet.sample(&mut rand::rng());
+    let mut noise_iter = noise.into_iter();
     let output = match mask {
         Some(mask) => {
+            let legal_sum: f32 = policy
+                .iter()
+                .zip(mask.iter())
+                .filter(|&(_, &m)| m)
+                .map(|(p, _)| p)
+                .sum();
             let mut output = Vec::<f32>::new();
             for (i, p) in policy.iter().enumerate() {
                 if mask[i] {
-                    output.push(p * (1. - frac) + frac * noise.iter().next().unwrap());
+                    let p = if legal_sum > 0.0 {
+                        p / legal_sum
+                    } else {
+                        1.0 / mask_legal_len as f32
+                    };
+                    output.push(p * (1. - frac) + frac * noise_iter.next().unwrap());
                 } else {
                     output.push(0.0);
                 }
@@ -296,7 +372,7 @@ fn root_priors(policy: &[f32], mask: Option<&[bool]>, alpha: f32, frac: f32) -> 
         }
         None => policy
             .iter()
-            .map(|p| p * (1.0 - frac) + frac * noise.iter().next().unwrap())
+            .map(|p| p * (1.0 - frac) + frac * noise_iter.next().unwrap())
             .collect(),
     };
 
@@ -375,6 +451,35 @@ mod tests {
                 assert!(res.value.is_finite());
             }
         }
+    }
+
+    #[test]
+    fn batched_search_single_legal_action() {
+        let mz_conf = MuZeroConfig::default();
+        let device = Default::default();
+        let agent: MlpNets<NdArray> = mz_conf.init(&device);
+
+        let obs = Tensor::<NdArray, 2>::random(
+            [2, mz_conf.obs_dim],
+            burn::tensor::Distribution::Uniform(-1.0, 1.0),
+            &device,
+        );
+
+        let mut forced_mask = vec![false; mz_conf.action_space];
+        forced_mask[1] = true;
+        let masks = vec![forced_mask, vec![true; mz_conf.action_space]];
+
+        let results = batched_search(obs, Some(&masks), &mz_conf, &agent, 1.0);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].best_action, 1);
+        assert_eq!(results[0].distribution[1], 1.0);
+        let sum: f32 = results[0].distribution.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-6);
+        assert!(results[0].value.is_finite());
+
+        let sum: f32 = results[1].distribution.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-4);
+        assert!(results[1].best_action < mz_conf.action_space);
     }
 
     #[test]

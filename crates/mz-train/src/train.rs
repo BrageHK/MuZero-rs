@@ -1,6 +1,6 @@
 use burn::{
     module::AutodiffModule,
-    optim::{Adam, GradientsParams, Optimizer, adaptor::OptimizerAdaptor},
+    optim::{GradientsParams, Optimizer},
     tensor::{Int, Tensor, backend::AutodiffBackend, cast::ToElement},
 };
 
@@ -8,9 +8,9 @@ use crate::{mz_config::MuZeroConfig, networks::MuZeroNets, replay_buffer::Replay
 
 const POLICY_LOSS_EPS: f32 = 1e-8;
 
-pub fn train<B: AutodiffBackend, N>(
+pub fn train<B: AutodiffBackend, N, O>(
     mut agent: N,
-    optimizer: &mut OptimizerAdaptor<Adam, N, B>,
+    optimizer: &mut O,
     mz_conf: &MuZeroConfig,
     buffer: &mut ReplayBuffer<B::InnerBackend>,
     lr: f64,
@@ -18,6 +18,7 @@ pub fn train<B: AutodiffBackend, N>(
 ) -> (N, Option<f32>)
 where
     N: MuZeroNets<B> + AutodiffModule<B>,
+    O: Optimizer<N, B>,
 {
     if buffer.total_positions <= mz_conf.training_batch_size {
         return (agent, None);

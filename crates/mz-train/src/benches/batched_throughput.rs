@@ -29,13 +29,11 @@ const ACTION_SPACE: usize = BOARD * BOARD + 1; // 64 moves + pass
 // Backend picked at runtime from `inference_backend` in configs/config.yaml.
 type B = Dispatch;
 
-fn othello_conf(n_games: usize) -> MuZeroConfig {
+fn othello_conf() -> MuZeroConfig {
     let mut conf = MuZeroConfig::default();
     conf.action_space = ACTION_SPACE;
     conf.obs_dim = OBS_CHANNELS * BOARD * BOARD;
     conf.num_simulations = NUM_SIMULATIONS;
-    conf.init_batch_size = n_games;
-    conf.rec_batch_size = n_games;
     if let Some(resnet) = conf.resnet.as_mut() {
         resnet.obs_channels = OBS_CHANNELS;
         resnet.board_height = BOARD;
@@ -54,7 +52,7 @@ fn run_group<N: MuZeroNets<B>>(c: &mut Criterion, group_name: &str) {
     let config_min_len = MuZeroConfig::default().min_rayon_threads;
 
     for n_games in BATCH_SIZES {
-        let mut mz_conf = othello_conf(n_games);
+        let mut mz_conf = othello_conf();
         let device = select_device(mz_conf.inference_backend);
         println!(
             "inference backend from config: {:?}",

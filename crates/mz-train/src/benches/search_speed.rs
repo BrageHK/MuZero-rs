@@ -5,12 +5,12 @@ use burn::backend::{
 };
 use burn::tensor::Tensor;
 use criterion::{Criterion, criterion_group, criterion_main};
-use mz_rs::{agent::MlpNets, mz_config::MuZeroConfig, search::search_serial::search};
+use mz_rs::{agent::MlpNets, mz_config::MuZeroConfig, search::batched_search};
 use std::hint::black_box;
 
 // Compares MCTS search speed on the GPU (Wgpu) backend vs the CPU (NdArray)
-// backend. Search does hundreds of batch-size-1 forward passes per move.
-// Using NdArray is significantly faster
+// backend at batch size 1. Search does hundreds of batch-size-1 forward
+// passes per move. Using NdArray is significantly faster
 fn bench_search_wgpu(c: &mut Criterion) {
     type B = Wgpu<f32, i32>;
     let device = WgpuDevice::default();
@@ -21,8 +21,9 @@ fn bench_search_wgpu(c: &mut Criterion) {
 
     c.bench_function("mcts_search_wgpu", |b| {
         b.iter(|| {
-            search(
+            batched_search(
                 black_box(obs.clone()),
+                None,
                 black_box(&mz_conf),
                 black_box(&agent),
                 black_box(1.0),
@@ -41,8 +42,9 @@ fn bench_search_ndarray(c: &mut Criterion) {
 
     c.bench_function("mcts_search_ndarray", |b| {
         b.iter(|| {
-            search(
+            batched_search(
                 black_box(obs.clone()),
+                None,
                 black_box(&mz_conf),
                 black_box(&agent),
                 black_box(1.0),

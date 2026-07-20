@@ -1,4 +1,4 @@
-use burn::{DispatchDevice, optim::Optimizer};
+use burn::DispatchDevice;
 use serde::{Deserialize, Serialize};
 
 use crate::mz_config::TemperatureSchedule;
@@ -68,7 +68,7 @@ pub fn select_device(choice: BackendChoice) -> DispatchDevice {
         #[allow(unreachable_patterns)]
         other => panic!(
             "backend {other:?} not compiled in — rebuild with the matching cargo feature, \
-             e.g. `cargo build --features cuda`"
+             e.g. `cargo build --features {other:?}`"
         ),
     }
 }
@@ -90,12 +90,17 @@ pub struct QNormalization {
 }
 
 impl QNormalization {
-    pub fn get_q(&mut self, q_value: f32) -> f32 {
-        self.q_max = self.q_max.max(q_value);
-        self.q_min = self.q_min.min(q_value);
-        let epsilon = 0.001;
+    pub fn update(&mut self, value: f32) {
+        self.q_max = self.q_max.max(value);
+        self.q_min = self.q_min.min(value);
+    }
 
-        (q_value - self.q_min) / (self.q_max - self.q_min + epsilon)
+    pub fn normalize(&self, value: f32) -> f32 {
+        if self.q_max > self.q_min {
+            (value - self.q_min) / (self.q_max - self.q_min)
+        } else {
+            value
+        }
     }
 }
 

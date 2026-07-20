@@ -21,5 +21,8 @@ target
 .idea/
 
 .claude/
+CLAUDE.md
 
 .DS_Store
+
+psudocode.py
