@@ -5,11 +5,13 @@ pub mod tictactoe;
 use burn::rl::StepResult;
 use burn::tensor::{Tensor, backend::Backend};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct EnvInfo {
     pub obs_shape: &'static [usize],
     pub action_size: usize,
     pub num_players: usize,
+    pub upper_reward_bound: Option<f32>,
+    pub lower_reward_bound: Option<f32>
 }
 
 impl EnvInfo {

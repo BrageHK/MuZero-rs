@@ -91,6 +91,8 @@ impl Environment for CartPoleWrapper {
         obs_shape: &[4],
         action_size: 2,
         num_players: 1,
+        lower_reward_bound: Some(1.0),
+        upper_reward_bound: Some(1.0)
     };
 
     fn legal_mask(&self) -> Vec<bool> {

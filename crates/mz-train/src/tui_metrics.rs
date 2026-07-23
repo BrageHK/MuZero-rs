@@ -60,7 +60,7 @@ impl TrainingTui {
         Self {
             renderer,
             interrupter,
-            total_steps: mz_conf.total_steps,
+            total_steps: mz_conf.training_steps,
             avg_window: mz_conf.avg_window,
             rate_window: Duration::from_secs_f32(mz_conf.rate_window_secs),
             best_id,

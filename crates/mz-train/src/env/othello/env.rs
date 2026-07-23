@@ -292,6 +292,8 @@ impl Environment for Othello {
         obs_shape: &[1, 8, 8],
         action_size: 65,
         num_players: 2,
+        lower_reward_bound: Some(0.0),
+        upper_reward_bound: Some(1.0)
     };
 
     fn legal_mask(&self) -> Vec<bool> {

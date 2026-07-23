@@ -1,7 +1,7 @@
 use burn::DispatchDevice;
 use serde::{Deserialize, Serialize};
 
-use crate::mz_config::TemperatureSchedule;
+use crate::{mz_config::TemperatureSchedule, replay_buffer::ReplayBuffer};
 
 /// Backend selected at runtime from config. A variant is only available when
 /// the matching cargo feature compiled that backend in (see `[features]` in
@@ -90,6 +90,13 @@ pub struct QNormalization {
 }
 
 impl QNormalization {
+    pub fn from_known_bounds(lower: f32, upper: f32) -> Self {
+        QNormalization { 
+            q_max: upper,
+            q_min: lower
+        }
+    }
+
     pub fn update(&mut self, value: f32) {
         self.q_max = self.q_max.max(value);
         self.q_min = self.q_min.min(value);
@@ -111,4 +118,9 @@ impl Default for QNormalization {
             q_min: f32::INFINITY,
         }
     }
+}
+
+pub fn save_buffer(buffer: &ReplayBuffer, path: &str) {
+    let bytes = rmp_serde::to_vec(&buffer.states).expect("Failed to serialize replay buffer");
+    std::fs::write(path, bytes).expect("Failed to write replay buffer");
 }

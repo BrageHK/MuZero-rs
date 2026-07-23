@@ -41,8 +41,6 @@ fn othello_conf() -> MuZeroConfig {
     conf.num_simulations = NUM_SIMULATIONS;
     if let Some(resnet) = conf.resnet.as_mut() {
         resnet.obs_channels = OBS_CHANNELS;
-        resnet.board_height = BOARD;
-        resnet.board_width = BOARD;
     }
     conf
 }

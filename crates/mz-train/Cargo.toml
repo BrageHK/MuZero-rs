@@ -7,7 +7,11 @@ edition.workspace = true
 [lib]
 name = "mz_rs"
 
+[build-dependencies]
+cmake = "0.1"
+
 [dependencies]
+ale = "0.1.3"
 burn = { workspace = true, features = [
     "std",
     "train",
@@ -29,9 +33,14 @@ gym-rs = { version = "0.3.1", branch = "main", git = "https://github.com/MathisW
 rand = { workspace = true }
 rand_distr = { workspace = true }
 rayon = "1.12.0"
+softbuffer = "0.3"
+winit = "0.28"
+winit_input_helper = "0.14"
 sdl2 = { version = "0.37", features = ["gfx", "use-pkgconfig"] }
 serde = { workspace = true }
 serde_yaml = "0.9.34"
+strum = "0.28.0"
+rmp-serde = "1.3.1"
 
 [features]
 # Pick backends for your system:

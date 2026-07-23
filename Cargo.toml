@@ -6,6 +6,9 @@ resolver = "3"
 version = "0.1.0"
 edition = "2024"
 
+[patch.crates-io]
+ale-sys = { path = "vendor/ale-sys" }
+
 [workspace.dependencies]
 burn = { version = "~0.21", default-features = false }
 burn-import = { version = "~0.21", features = ["onnx"] }

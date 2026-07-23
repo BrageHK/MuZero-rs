@@ -212,8 +212,8 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
             obs_channels: resnet.obs_channels,
             channels: resnet.channels,
             n_blocks: resnet.n_blocks,
-            board_height: resnet.board_height,
-            board_width: resnet.board_width,
+            board_height: mz_conf.board_height,
+            board_width: mz_conf.board_width,
             action_space: mz_conf.action_space,
             fc_hidden_size: resnet.fc_hidden_size,
         }

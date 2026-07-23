@@ -1,10 +1,11 @@
 use std::collections::VecDeque;
 
 use fastrand::Rng;
+use serde::{Deserialize, Serialize};
 
 use crate::mz_config::MuZeroConfig;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BufferData {
     pub state: Vec<f32>,
     pub action: usize,
@@ -12,7 +13,8 @@ pub struct BufferData {
     pub reward: f32,
     pub policy: Vec<f32>,
     pub is_terminal: bool,
-    pub is_boundary: bool,
+    pub created_step: usize,
+    pub legal_mask: Vec<bool>,
 }
 
 pub struct ReplayBuffer {
@@ -57,6 +59,14 @@ impl ReplayBuffer {
         }
     }
 
+    pub fn sample_reanalyze_indices(&mut self, pool: usize) -> Vec<usize> {
+        let len = self.states.len();
+        if len == 0 {
+            return Vec::new();
+        }
+        (0..pool.min(len)).map(|_| self.rng.usize(0..len)).collect()
+    }
+
     pub fn sample_games(&mut self, mz_config: &MuZeroConfig) -> Vec<Vec<BufferData>> {
         (0..mz_config.training_batch_size)
             .map(|_| self.sample_single(mz_config))
@@ -98,7 +108,7 @@ impl ReplayBuffer {
                 value,
                 ..state.clone()
             });
-            if state.is_boundary {
+            if state.is_terminal {
                 absorbing = Some(BufferData {
                     value: 0.0,
                     reward: 0.0,
@@ -127,10 +137,6 @@ impl ReplayBuffer {
                 value += mz_config.discount.powi(k as i32) * state.reward;
                 return value;
             }
-            if state.is_boundary {
-                value += mz_config.discount.powi(k as i32) * state.value;
-                return value;
-            }
             value += mz_config.discount.powi(k as i32) * state.reward;
         }
         let bootstrap_idx = idx + mz_config.n_steps;
@@ -156,7 +162,8 @@ mod tests {
                 reward: 0.0,
                 policy: vec![0.25; 4],
                 is_terminal: i == n - 1,
-                is_boundary: i == n - 1,
+                created_step: 0,
+                legal_mask: vec![true; 4],
             })
             .collect()
     }
@@ -189,6 +196,26 @@ mod tests {
                 mz_config.unroll_steps
             );
         }
+    }
+
+    #[test]
+    fn reanalyze_indices_and_persist() {
+        let mz_config = MuZeroConfig {
+            training_batch_size: 1,
+            is_twoplayer: false,
+            ..Default::default()
+        };
+        let mut buffer = ReplayBuffer::default();
+        buffer.store_game(create_game(10), &mz_config);
+
+        let idxs = buffer.sample_reanalyze_indices(5);
+        assert_eq!(idxs.len(), 5);
+        assert!(idxs.iter().all(|&i| i < buffer.states.len()));
+
+        buffer.states[3].policy = vec![1.0, 0.0, 0.0, 0.0];
+        buffer.states[3].created_step = 42;
+        assert_eq!(buffer.states[3].policy, vec![1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(buffer.states[3].created_step, 42);
     }
 
     #[test]

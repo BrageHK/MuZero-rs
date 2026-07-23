@@ -3,6 +3,7 @@ use std::fs;
 use burn::record::CompactRecorder;
 use burn::tensor::backend::Backend;
 use serde::{Deserialize, Serialize};
+use strum::AsRefStr;
 
 use crate::{
     env::Environment,
@@ -25,7 +26,7 @@ pub enum NetworkType {
     ResNet,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, AsRefStr)]
 pub enum EnvironmentName {
     CartPole,
     TicTacToe,
@@ -57,8 +58,6 @@ pub struct ResNetSubConfig {
     pub obs_channels: usize,
     pub channels: usize,
     pub n_blocks: usize,
-    pub board_height: usize,
-    pub board_width: usize,
     pub fc_hidden_size: usize,
 }
 
@@ -82,7 +81,7 @@ pub struct MuZeroConfig {
     pub num_simulations: usize,
     pub dirichlet_noise: f32,
     pub root_exploration_fraction: f32,
-    pub total_steps: usize,
+    pub training_steps: usize,
     pub train_ratio: f32,
     pub buffer_size: usize,
     // Avg-reward metric averages over the last N finished games.
@@ -93,6 +92,14 @@ pub struct MuZeroConfig {
     pub rate_window_secs: f32,
     pub inference_update_interval: usize,
     pub checkpoint_interval: usize,
+
+    // Chance to reanalyze a sample scales with its age. 0.0 disables.
+    #[serde(default)]
+    pub reanalyze_fraction: f32,
+    #[serde(default = "default_reanalyze_staleness_steps")]
+    pub reanalyze_staleness_steps: usize,
+    #[serde(default = "default_reanalyze_pool")]
+    pub reanalyze_pool: usize,
 
     // None = set automatically
     pub min_rayon_threads: usize,
@@ -117,6 +124,10 @@ pub struct MuZeroConfig {
     pub obs_dim: usize,
     #[serde(default)]
     pub is_twoplayer: bool,
+    #[serde(default)]
+    pub board_height: usize,
+    #[serde(default)]
+    pub board_width: usize,
 }
 
 fn default_avg_window() -> usize {
@@ -125,6 +136,14 @@ fn default_avg_window() -> usize {
 
 fn default_rate_window_secs() -> f32 {
     10.0
+}
+
+fn default_reanalyze_staleness_steps() -> usize {
+    20
+}
+
+fn default_reanalyze_pool() -> usize {
+    4096
 }
 
 impl Default for MuZeroConfig {
@@ -153,15 +172,18 @@ fn get_conf(file_content: String) -> MuZeroConfig {
     with_env!(conf, E => {
         let env = E::default();
 
+        let info = env.get_info();
         match conf.network_type {
             Linear => (),
             ResNet => {
-                if env.get_info().obs_shape.len() < 2 {
+                let shape = info.obs_shape;
+                if shape.len() < 2 {
                     panic!("Cannot use ResNet with a 1D environment");
                 }
+                conf.board_height = shape[shape.len() - 2];
+                conf.board_width = shape[shape.len() - 1];
             },
         };
-        let info = env.get_info();
         conf.action_space = info.action_size;
         conf.obs_dim = info.obs_dim();
         conf.is_twoplayer = info.num_players > 1;
