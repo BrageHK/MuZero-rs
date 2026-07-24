@@ -40,7 +40,8 @@ fn main() {
     let mut buffer = ReplayBuffer::new(&mz_conf);
     let mut tui = TrainingTui::new(&mz_conf);
 
-    let training_steps_per_iteration = ((mz_conf.game_batch_size as f32 / mz_conf.training_batch_size as f32
+    let training_steps_per_iteration = ((mz_conf.game_batch_size as f32
+        / mz_conf.training_batch_size as f32
         * mz_conf.train_ratio) as i32)
         .max(1);
 
@@ -62,6 +63,7 @@ fn main() {
                 break;
             }
             let tau = tau_for_step(&mz_conf.temperature_schedule, training_step);
+            tui.set_tau(tau);
 
             let obs = E::batch_state_tensor::<InferB>(&env_batch, &infer_device);
             let legal_masks: Vec<Vec<bool>> =
@@ -93,9 +95,10 @@ fn main() {
                 game_reward_batch[i] += result.reward as f32;
 
                 if result.truncated || result.done {
+                    let length = game_batch[i].len();
                     buffer.store_game(mem::take(&mut game_batch[i]), &mz_conf);
                     env_batch[i].reset();
-                    tui.game_finished(game_reward_batch[i]);
+                    tui.game_finished(game_reward_batch[i], length);
                     game_reward_batch[i] = 0.0;
                 }
             }
@@ -118,8 +121,8 @@ fn main() {
 
             // Train
             for _train_step in 0..training_steps_per_iteration {
-                let _loss;
-                (agent, _loss) = train(
+                let loss;
+                (agent, loss) = train(
                     agent,
                     &mut optimizer,
                     &mz_conf,
@@ -127,6 +130,9 @@ fn main() {
                     mz_conf.learning_rate,
                     &train_device,
                 );
+                if let Some(loss) = loss {
+                    tui.set_loss(loss);
+                }
 
                 training_step += 1;
                 // Update inference agent every n training steps
@@ -136,8 +142,9 @@ fn main() {
             }
 
             // Tui stuff
-            training_step += training_steps_per_iteration as usize;
             tui.add_train_steps(training_steps_per_iteration as usize);
+            tui.add_env_steps(mz_conf.game_batch_size, buffer.states.len() > mz_conf.training_batch_size);
+            tui.set_buffer_states(buffer.states.len());
             tui.render(training_step + 1);
         }
 
@@ -146,47 +153,32 @@ fn main() {
 }
 
 fn reanalyze<InferB: Backend>(
-    mz_conf: &MuZeroConfig, 
-    buffer: &mut ReplayBuffer, 
-    training_step: usize, 
-    infer_device: &InferB::Device, 
-    inference_agent: &MlpNets<InferB>
+    mz_conf: &MuZeroConfig,
+    buffer: &mut ReplayBuffer,
+    training_step: usize,
+    infer_device: &InferB::Device,
+    inference_agent: &MlpNets<InferB>,
 ) {
-    if mz_conf.reanalyze_fraction > 0.0 {
-        let idxs = buffer.sample_reanalyze_indices(mz_conf.reanalyze_pool);
-        let staleness = mz_conf.reanalyze_staleness_steps.max(1) as f32;
-        let mut kept = Vec::new();
-        for idx in idxs {
-            let entry = &buffer.states[idx];
-            if entry.is_terminal {
-                continue;
-            }
-            let age = training_step.saturating_sub(entry.created_step) as f32;
-            let p = mz_conf.reanalyze_fraction * (age / staleness).min(1.0);
-            if rand::random::<f32>() < p {
-                kept.push(idx);
-            }
+    if rand::random::<f32>() < mz_conf.reanalyze_fraction {
+        let idxs = buffer.sample_reanalyze_indices(mz_conf.reanalyze_batch_size, training_step);
+        let dim = mz_conf.obs_dim;
+        let mut data = Vec::with_capacity(idxs.len() * dim);
+        for &idx in &idxs {
+            data.extend_from_slice(&buffer.states[idx].state);
         }
-        if !kept.is_empty() {
-            let dim = mz_conf.obs_dim;
-            let mut data = Vec::with_capacity(kept.len() * dim);
-            for &idx in &kept {
-                data.extend_from_slice(&buffer.states[idx].state);
+        let obs = Tensor::<InferB, 1>::from_floats(data.as_slice(), infer_device)
+            .reshape([idxs.len(), dim]);
+        let masks: Vec<Vec<bool>> = idxs
+            .iter()
+            .map(|&idx| buffer.states[idx].legal_mask.clone())
+            .collect();
+        let results = batched_search(obs, Some(&masks), mz_conf, inference_agent, 1.0);
+        for (&idx, r) in idxs.iter().zip(results.iter()) {
+            buffer.states[idx].policy = r.policy_target.clone();
+            if !mz_conf.is_twoplayer {
+                buffer.states[idx].value = r.value;
             }
-            let obs = Tensor::<InferB, 1>::from_floats(data.as_slice(), infer_device)
-                .reshape([kept.len(), dim]);
-            let masks: Vec<Vec<bool>> = kept
-                .iter()
-                .map(|&idx| buffer.states[idx].legal_mask.clone())
-                .collect();
-            let results = batched_search(obs, Some(&masks), mz_conf, inference_agent, 1.0);
-            for (&idx, r) in kept.iter().zip(results.iter()) {
-                buffer.states[idx].policy = r.policy_target.clone();
-                if !mz_conf.is_twoplayer {
-                    buffer.states[idx].value = r.value;
-                }
-                buffer.states[idx].created_step = training_step;
-            }
+            buffer.states[idx].created_step = training_step;
         }
     }
 }

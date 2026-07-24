@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use fastrand::Rng;
+use rand::seq::index::sample_weighted;
 use serde::{Deserialize, Serialize};
 
 use crate::mz_config::MuZeroConfig;
@@ -59,12 +60,20 @@ impl ReplayBuffer {
         }
     }
 
-    pub fn sample_reanalyze_indices(&mut self, pool: usize) -> Vec<usize> {
+    pub fn sample_reanalyze_indices(&mut self, pool: usize, current_step: usize) -> Vec<usize> {
         let len = self.states.len();
         if len == 0 {
             return Vec::new();
         }
-        (0..pool.min(len)).map(|_| self.rng.usize(0..len)).collect()
+        let amount = pool.min(len);
+        let weights: Vec<f32> = self
+            .states
+            .iter()
+            .map(|b| current_step.saturating_sub(b.created_step) as f32 + 1.0)
+            .collect();
+        sample_weighted(&mut rand::rng(), len, |i| weights[i], amount)
+            .map(|idx| idx.into_vec())
+            .unwrap_or_default()
     }
 
     pub fn sample_games(&mut self, mz_config: &MuZeroConfig) -> Vec<Vec<BufferData>> {
@@ -208,7 +217,7 @@ mod tests {
         let mut buffer = ReplayBuffer::default();
         buffer.store_game(create_game(10), &mz_config);
 
-        let idxs = buffer.sample_reanalyze_indices(5);
+        let idxs = buffer.sample_reanalyze_indices(5, 0);
         assert_eq!(idxs.len(), 5);
         assert!(idxs.iter().all(|&i| i < buffer.states.len()));
 

@@ -78,6 +78,8 @@ pub struct MuZeroConfig {
     pub game_batch_size: usize,
     pub discount: f32,
     pub learning_rate: f64,
+    pub grad_clip: f32,
+    pub weight_decay: f32,
     pub num_simulations: usize,
     pub dirichlet_noise: f32,
     pub root_exploration_fraction: f32,
@@ -96,10 +98,8 @@ pub struct MuZeroConfig {
     // Chance to reanalyze a sample scales with its age. 0.0 disables.
     #[serde(default)]
     pub reanalyze_fraction: f32,
-    #[serde(default = "default_reanalyze_staleness_steps")]
-    pub reanalyze_staleness_steps: usize,
     #[serde(default = "default_reanalyze_pool")]
-    pub reanalyze_pool: usize,
+    pub reanalyze_batch_size: usize,
 
     // None = set automatically
     pub min_rayon_threads: usize,
@@ -136,10 +136,6 @@ fn default_avg_window() -> usize {
 
 fn default_rate_window_secs() -> f32 {
     10.0
-}
-
-fn default_reanalyze_staleness_steps() -> usize {
-    20
 }
 
 fn default_reanalyze_pool() -> usize {

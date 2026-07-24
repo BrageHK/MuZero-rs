@@ -1,10 +1,10 @@
-- [ ] Save replay buffer
+- [x] Save replay buffer
 - [x] total steps -> training steps instead
 - [ ] Better training tracking:
-    - [ ] tau
-    - [ ] loss
+    - [x] tau
+    - [x] loss
     - [ ] reward (only in single player)
-    - [ ] game length (avg and directly)
+    - [x] game length 
     - [ ] number of replay buffer states
     - [ ] Add proper evaluation of board games: 
         - [ ] Eval against a strong opponent: alpha-beta pruning w/ heuristics in othello, alpha-beta pruning with some randomness in tic-tac-toe

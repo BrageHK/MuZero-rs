@@ -27,12 +27,18 @@ pub struct TrainingTui {
     best_id: MetricId,
     avg_id: MetricId,
     sps_id: MetricId,
+    tau_id: MetricId,
+    loss_id: MetricId,
+    len_id: MetricId,
+    buf_id: MetricId,
     best_reward: f32,
     recent_rewards: VecDeque<f32>,
+    recent_lengths: VecDeque<usize>,
     rate_samples: VecDeque<(Instant, usize)>,
     games_finished: usize,
     env_steps: usize,
     train_steps: usize,
+    buffer_states: usize,
 }
 
 impl TrainingTui {
@@ -56,6 +62,10 @@ impl TrainingTui {
         let best_id = register("Best Game Reward");
         let avg_id = register("Avg Game Reward");
         let sps_id = register("Env Steps / sec");
+        let tau_id = register("Tau");
+        let loss_id = register("Loss");
+        let len_id = register("Avg Game Length");
+        let buf_id = register("Buffer States");
 
         Self {
             renderer,
@@ -66,16 +76,22 @@ impl TrainingTui {
             best_id,
             avg_id,
             sps_id,
+            tau_id,
+            loss_id,
+            len_id,
+            buf_id,
             best_reward: f32::NEG_INFINITY,
             recent_rewards: VecDeque::with_capacity(mz_conf.avg_window),
+            recent_lengths: VecDeque::with_capacity(mz_conf.avg_window),
             rate_samples: VecDeque::new(),
             games_finished: 0,
             env_steps: 0,
             train_steps: 0,
+            buffer_states: 0,
         }
     }
 
-    pub fn game_finished(&mut self, total_reward: f32) {
+    pub fn game_finished(&mut self, total_reward: f32, length: usize) {
         self.games_finished += 1;
         if total_reward > self.best_reward {
             self.best_reward = total_reward;
@@ -86,12 +102,37 @@ impl TrainingTui {
         }
         self.recent_rewards.push_back(total_reward);
 
+        if self.recent_lengths.len() == self.avg_window {
+            self.recent_lengths.pop_front();
+        }
+        self.recent_lengths.push_back(length);
+
         let avg = self.recent_rewards.iter().map(|&r| r as f64).sum::<f64>()
             / self.recent_rewards.len() as f64;
+        let avg_len = self.recent_lengths.iter().map(|&l| l as f64).sum::<f64>()
+            / self.recent_lengths.len() as f64;
         let best = numeric_state(&self.best_id, self.best_reward as f64);
         let avg = numeric_state(&self.avg_id, avg);
+        let avg_len = numeric_state(&self.len_id, avg_len);
         self.renderer.update_train(best);
         self.renderer.update_train(avg);
+        self.renderer.update_train(avg_len);
+    }
+
+    pub fn set_tau(&mut self, tau: f32) {
+        self.renderer
+            .update_train(numeric_state(&self.tau_id, tau as f64));
+    }
+
+    pub fn set_loss(&mut self, loss: f32) {
+        self.renderer
+            .update_train(numeric_state(&self.loss_id, loss as f64));
+    }
+
+    pub fn set_buffer_states(&mut self, n: usize) {
+        self.buffer_states = n;
+        self.renderer
+            .update_train(numeric_state(&self.buf_id, n as f64));
     }
 
     pub fn add_env_steps(&mut self, n: usize, backprop_active: bool) {
@@ -143,6 +184,10 @@ impl TrainingTui {
                 ProgressType::Value {
                     tag: "Games".to_string(),
                     value: self.games_finished,
+                },
+                ProgressType::Value {
+                    tag: "Buffer states".to_string(),
+                    value: self.buffer_states,
                 },
             ],
         );

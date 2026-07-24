@@ -3,6 +3,8 @@
 
 use burn::module::AutodiffModule;
 use burn::optim::adaptor::OptimizerAdaptor;
+use burn::grad_clipping::GradientClippingConfig;
+use burn::optim::decay::WeightDecayConfig;
 use burn::optim::{
     Adam, AdamConfig, AdamW, AdamWConfig, GradientsParams, LearningRate, MultiGradientsParams,
     Optimizer, Sgd, SgdConfig,
@@ -36,10 +38,29 @@ where
     M: AutodiffModule<B>,
 {
     pub fn new(mz_conf: &MuZeroConfig) -> Self {
+        let clip =
+            (mz_conf.grad_clip > 0.0).then(|| GradientClippingConfig::Norm(mz_conf.grad_clip));
+        let weight_decay =
+            (mz_conf.weight_decay > 0.0).then(|| WeightDecayConfig::new(mz_conf.weight_decay));
         match mz_conf.optimizer {
-            OptimChoice::Adam => Self::Adam(AdamConfig::new().init()),
-            OptimChoice::AdamW => Self::AdamW(AdamWConfig::new().init()),
-            OptimChoice::Sgd => Self::Sgd(SgdConfig::new().init()),
+            OptimChoice::Adam => Self::Adam(
+                AdamConfig::new()
+                    .with_grad_clipping(clip)
+                    .with_weight_decay(weight_decay)
+                    .init(),
+            ),
+            OptimChoice::AdamW => Self::AdamW(
+                AdamWConfig::new()
+                    .with_grad_clipping(clip)
+                    .with_weight_decay(mz_conf.weight_decay)
+                    .init(),
+            ),
+            OptimChoice::Sgd => Self::Sgd(
+                SgdConfig::new()
+                    .with_gradient_clipping(clip)
+                    .with_weight_decay(weight_decay)
+                    .init(),
+            ),
         }
     }
 }
