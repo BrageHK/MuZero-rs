@@ -16,6 +16,15 @@ use crate::mz_config::MuZeroConfig;
 /// (hidden_state, reward, value, policy)
 pub type MuZeroOutput<B> = (Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>);
 
+/// Appendix G: scale the hidden state to the same range as the action input
+/// ([0, 1]) per sample: s_scaled = (s - min(s)) / (max(s) - min(s)).
+pub fn scale_hidden_state<B: Backend>(hidden: Tensor<B, 2>) -> Tensor<B, 2> {
+    let min = hidden.clone().min_dim(1);
+    let max = hidden.clone().max_dim(1);
+    let range = (max - min.clone()).clamp_min(1e-5);
+    (hidden - min) / range
+}
+
 pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
     fn init(mz_conf: &MuZeroConfig, device: &B::Device) -> Self;
 
@@ -33,7 +42,7 @@ pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
 
     /// returns (hidden_state, reward, value, policy). reward is zero at the root
     fn initial_inference(&self, obs: Tensor<B, 2>) -> MuZeroOutput<B> {
-        let hidden_state = self.represent(obs);
+        let hidden_state = scale_hidden_state(self.represent(obs));
         let (value, policy) = self.predict(hidden_state.clone());
         let batch_size = hidden_state.dims()[0];
         let reward = Tensor::zeros([batch_size, 1], &hidden_state.device());
@@ -48,6 +57,7 @@ pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
         action_size: usize,
     ) -> MuZeroOutput<B> {
         let (hidden_state, reward) = self.dynamics(hidden, action, action_size);
+        let hidden_state = scale_hidden_state(hidden_state);
         let (value, policy) = self.predict(hidden_state.clone());
         (hidden_state, reward, value, policy)
     }
