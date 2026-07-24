@@ -17,7 +17,8 @@ pub struct DynamicModelMLP<B: Backend> {
 }
 
 impl<B: Backend> DynamicModelMLP<B> {
-    /// Returns (hidden_state, reward)
+    /// Returns (hidden_state, reward_logits). reward_logits is a categorical
+    /// distribution over the reward support (see `support`).
     pub fn forward(
         &self,
         hidden: Tensor<B, 2>,
@@ -61,6 +62,7 @@ pub struct DynamicModelConfig {
     pub fc_hidden_size: usize,
     pub hidden_output: usize,
     pub n_layers: usize,
+    pub reward_support: usize,
 }
 
 impl DynamicModelConfig {
@@ -79,7 +81,7 @@ impl DynamicModelConfig {
             backbone,
 
             reward_head1: LinearConfig::new(self.fc_hidden_size, self.fc_hidden_size).init(device),
-            reward_head2: LinearConfig::new(self.fc_hidden_size, 1).init(device),
+            reward_head2: LinearConfig::new(self.fc_hidden_size, self.reward_support).init(device),
 
             hidden_head1: LinearConfig::new(self.fc_hidden_size, self.fc_hidden_size).init(device),
             hidden_head2: LinearConfig::new(self.fc_hidden_size, self.hidden_output).init(device),
@@ -100,11 +102,11 @@ mod tests {
     #[test]
     fn forward_shapes() {
         let device = Default::default();
-        let model = DynamicModelConfig::new(8 + 2, 16, 8, 3).init::<MyBackend>(&device);
+        let model = DynamicModelConfig::new(8 + 2, 16, 8, 3, 7).init::<MyBackend>(&device);
         let hidden = Tensor::<MyBackend, 2>::zeros([3, 8], &device);
         let action = Tensor::<MyBackend, 1, Int>::from_data([0, 1, 0], &device);
         let (hidden_state, reward) = model.forward(hidden, action, 2);
         assert_eq!(hidden_state.dims(), [3, 8]);
-        assert_eq!(reward.dims(), [3, 1]);
+        assert_eq!(reward.dims(), [3, 7]);
     }
 }

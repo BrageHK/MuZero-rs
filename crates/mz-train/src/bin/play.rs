@@ -5,6 +5,7 @@ use burn::Dispatch;
 use burn::tensor::backend::Backend;
 use gif::{Encoder, Frame, Repeat};
 use gym_rs::utils::renderer::{RenderColor, RenderFrame, RenderMode};
+use mz_rs::env::atari::env::AtariEnv;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
 use mz_rs::env::othello::env::{Othello, PASS};
 use mz_rs::env::tictactoe::env::TicTacToe;
@@ -185,6 +186,59 @@ fn play_single_player<B: Backend>(mz_conf: &MuZeroConfig, agent: &MlpNets<B>, de
     }
 }
 
+fn play_atari<B: Backend>(mz_conf: &MuZeroConfig, agent: &MlpNets<B>, device: &B::Device) {
+    let mut env = AtariEnv::default();
+    let mut rng = rand::rng();
+
+    env.reset();
+    let mut total_reward = 0.0;
+    let mut steps = 0;
+    let mut frames: Vec<(usize, usize, Vec<u8>)> = Vec::new();
+
+    loop {
+        frames.push(env.rgb_frame());
+        let obs = env.state_tensor::<B>(device);
+        let mask = env.legal_mask();
+        let results =
+            batched_search(obs, Some(std::slice::from_ref(&mask)), mz_conf, agent, 0.10, false);
+        let action = WeightedIndex::new(&results[0].distribution)
+            .unwrap()
+            .sample(&mut rng);
+        let result = env.step(action);
+        total_reward += result.reward;
+        steps += 1;
+
+        if result.done || result.truncated {
+            break;
+        }
+    }
+
+    println!("steps={steps}, reward={total_reward}");
+    let path = format!("media/{}.gif", mz_conf.environment.as_ref());
+    save_rgb_gif(&frames, &path);
+    println!("Saved episode to {path}");
+}
+
+fn save_rgb_gif(frames: &[(usize, usize, Vec<u8>)], path: &str) {
+    if frames.is_empty() {
+        return;
+    }
+    let (width, height, _) = &frames[0];
+    let width = *width as u16;
+    let height = *height as u16;
+
+    std::fs::create_dir_all("media").unwrap();
+    let mut file = File::create(path).unwrap();
+    let mut encoder = Encoder::new(&mut file, width, height, &[]).unwrap();
+    encoder.set_repeat(Repeat::Infinite).unwrap();
+
+    for (_, _, rgb) in frames.iter().step_by(2) {
+        let mut gif_frame = Frame::from_rgb(width, height, rgb);
+        gif_frame.delay = 4;
+        encoder.write_frame(&gif_frame).unwrap();
+    }
+}
+
 fn save_gif(frames: &[RenderFrame], path: &str) {
     let height = frames[0].0.len() as u16;
     let width = frames[0].0[0].len() as u16;
@@ -246,5 +300,6 @@ fn main() {
             play_two_player::<B, Othello>(&mz_conf, &agent, &device, human_first);
         }
         EnvironmentName::CartPole => play_single_player::<B>(&mz_conf, &agent, &device),
+        EnvironmentName::Atari => play_atari::<B>(&mz_conf, &agent, &device),
     }
 }

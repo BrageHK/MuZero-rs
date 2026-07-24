@@ -22,6 +22,8 @@ pub struct ResNetConfig {
     pub board_width: usize,
     pub action_space: usize,
     pub fc_hidden_size: usize,
+    pub value_support: usize,
+    pub reward_support: usize,
 }
 
 fn conv3x3<B: Backend>(c_in: usize, c_out: usize, device: &B::Device) -> Conv2d<B> {
@@ -172,7 +174,7 @@ impl ResNetConfig {
                 reward_conv: conv1x1(c, 1, device),
                 reward_bn: BatchNormConfig::new(1).init(device),
                 reward_fc1: LinearConfig::new(h * w, self.fc_hidden_size).init(device),
-                reward_fc2: LinearConfig::new(self.fc_hidden_size, 1).init(device),
+                reward_fc2: LinearConfig::new(self.fc_hidden_size, self.reward_support).init(device),
                 relu: Relu,
             },
             prediction: ResNetPrediction {
@@ -182,7 +184,7 @@ impl ResNetConfig {
                 value_conv: conv1x1(c, 1, device),
                 value_bn: BatchNormConfig::new(1).init(device),
                 value_fc1: LinearConfig::new(h * w, self.fc_hidden_size).init(device),
-                value_fc2: LinearConfig::new(self.fc_hidden_size, 1).init(device),
+                value_fc2: LinearConfig::new(self.fc_hidden_size, self.value_support).init(device),
                 relu: Relu,
             },
             channels: c,
@@ -216,6 +218,8 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
             board_width: mz_conf.board_width,
             action_space: mz_conf.action_space,
             fc_hidden_size: resnet.fc_hidden_size,
+            value_support: mz_conf.support_len(),
+            reward_support: mz_conf.support_len(),
         }
         .init(device)
     }
@@ -261,6 +265,8 @@ mod tests {
             board_width: 4,
             action_space: 5,
             fc_hidden_size: 16,
+            value_support: 7,
+            reward_support: 7,
         }
         .init(device)
     }
@@ -278,10 +284,10 @@ mod tests {
         let action = Tensor::<MyBackend, 1, Int>::from_data([1, 3], &device);
         let (next_hidden, reward) = nets.dynamics(hidden.clone(), action, 5);
         assert_eq!(next_hidden.dims(), [2, 8 * 4 * 4]);
-        assert_eq!(reward.dims(), [2, 1]);
+        assert_eq!(reward.dims(), [2, 7]);
 
         let (value, policy) = nets.predict(hidden);
-        assert_eq!(value.dims(), [2, 1]);
+        assert_eq!(value.dims(), [2, 7]);
         assert_eq!(policy.dims(), [2, 5]);
     }
 

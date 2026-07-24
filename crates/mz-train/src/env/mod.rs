@@ -1,3 +1,4 @@
+pub mod atari;
 pub mod cartpole;
 pub mod othello;
 pub mod tictactoe;
@@ -96,6 +97,10 @@ macro_rules! with_env {
             }
             $crate::mz_config::EnvironmentName::Othello => {
                 type $E = $crate::env::othello::env::Othello;
+                $body
+            }
+            $crate::mz_config::EnvironmentName::Atari => {
+                type $E = $crate::env::atari::env::AtariEnv;
                 $body
             }
         }

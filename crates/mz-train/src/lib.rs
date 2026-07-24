@@ -5,6 +5,7 @@ pub mod networks;
 pub mod optim;
 pub mod replay_buffer;
 pub mod search;
+pub mod support;
 pub mod train;
 pub mod tui_metrics;
 pub mod utils;

@@ -7,6 +7,7 @@ use strum::AsRefStr;
 
 use crate::{
     env::Environment,
+    env::atari::env::{AtariGame, set_atari_game},
     mz_config::NetworkType::{Linear, ResNet},
     networks::MuZeroNets,
     utils::BackendChoice,
@@ -31,6 +32,7 @@ pub enum EnvironmentName {
     CartPole,
     TicTacToe,
     Othello,
+    Atari,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -68,6 +70,9 @@ pub struct MuZeroConfig {
     pub environment: EnvironmentName,
 
     #[serde(default)]
+    pub atari_game: Option<AtariGame>,
+
+    #[serde(default)]
     pub linear: Option<LinearSubConfig>,
     #[serde(default)]
     pub resnet: Option<ResNetSubConfig>,
@@ -83,6 +88,8 @@ pub struct MuZeroConfig {
     pub weight_decay: f32,
     pub momentum: f32,
     pub num_simulations: usize,
+    #[serde(default = "default_support_size")]
+    pub support_size: usize,
     pub dirichlet_alpha: f32,
     pub root_exploration_fraction: f32,
     pub training_steps: usize,
@@ -144,6 +151,10 @@ fn default_reanalyze_pool() -> usize {
     4096
 }
 
+fn default_support_size() -> usize {
+    50
+}
+
 impl Default for MuZeroConfig {
     fn default() -> Self {
         let file_content = fs::read_to_string("configs/config.yaml")
@@ -192,12 +203,19 @@ fn validate(conf: &MuZeroConfig) {
     assert!(conf.unroll_steps >= 1, "unroll_steps must be >= 1");
     assert!(conf.n_steps >= 1, "n_steps must be >= 1");
     assert!(conf.buffer_size >= 1, "buffer_size must be >= 1");
+    assert!(conf.support_size >= 1, "support_size must be >= 1");
 }
 
 fn get_conf(file_content: String) -> MuZeroConfig {
     let mut conf: MuZeroConfig =
         serde_yaml::from_str(&file_content).expect("Failed to parse configs/config.yaml");
     validate(&conf);
+    if let EnvironmentName::Atari = conf.environment {
+        let game = conf
+            .atari_game
+            .expect("environment: Atari requires `atari_game` in the config");
+        set_atari_game(game);
+    }
     with_env!(conf, E => {
         let env = E::default();
 
@@ -231,6 +249,10 @@ impl MuZeroConfig {
         self.resnet
             .as_ref()
             .expect("network_type: ResNet requires a `resnet:` section in the config")
+    }
+
+    pub fn support_len(&self) -> usize {
+        crate::support::support_len(self.support_size)
     }
 
     /// Fresh random init of a network family, e.g. `mz_conf.init::<B, MlpNets<B>>(&device)`.

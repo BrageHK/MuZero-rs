@@ -1,7 +1,12 @@
 # Network
 
 network_type: Linear # Linear, ResNet
-environment: CartPole # CartPole, TicTacToe, Othello
+environment: CartPole # CartPole, TicTacToe, Othello, Atari
+
+# Only used when environment: Atari. Any variant of the ale::BundledRom enum
+# (e.g. Breakout, Pong, SpaceInvaders, MsPacman, Seaquest). Obs is a 1x84x84
+# grayscale frame, so pair Atari with network_type: ResNet and resnet.obs_channels: 1.
+atari_game: Breakout
 
 # Only for MLP
 # This config learns CartPole in a few minutes on CPU only
@@ -33,7 +38,7 @@ training_backend: ndarray # wgpu
 inference_backend: ndarray # ndarray
 
 # Training + algorithm
-n_steps: 10
+n_steps: 5
 unroll_steps: 5
 
 # Batch sizes
@@ -50,6 +55,10 @@ momentum: 0.9
 
 train_ratio: 2
 num_simulations: 35
+
+# Categorical value/reward support. Heads predict a distribution over
+# 2*support_size+1 bins under the invertible scaling transform (paper App. F).
+support_size: 50
 
 inference_update_interval: 1 # update inference network every N training steps
 checkpoint_interval: 1000 # save network checkpoint to model/env_name every N training steps

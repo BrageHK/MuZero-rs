@@ -6,6 +6,7 @@ use rand_distr::{Distribution, multi::Dirichlet};
 use rayon::prelude::*;
 
 use crate::networks::MuZeroNets;
+use crate::support::logits_to_scalars;
 use crate::{mz_config::MuZeroConfig, utils::QNormalization};
 
 pub struct SearchReturn {
@@ -77,8 +78,11 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         .try_into()
         .expect("Correct amount of tensor data");
 
-    let root_rewards = root_rewards.into_vec::<f32>().unwrap();
-    let root_values = root_values.into_vec::<f32>().unwrap();
+    let support_size = mz_conf.support_size;
+    let root_rewards =
+        logits_to_scalars(&root_rewards.into_vec::<f32>().unwrap(), batch_size, support_size);
+    let root_values =
+        logits_to_scalars(&root_values.into_vec::<f32>().unwrap(), batch_size, support_size);
     let root_policies = root_policies.into_vec::<f32>().unwrap();
 
     let forced_result = |i: usize, action: usize| {
@@ -238,8 +242,10 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
             .try_into()
             .expect("Correct amount of tensor data");
 
-        let new_rewards = new_rewards.into_vec::<f32>().unwrap();
-        let new_values = new_values.into_vec::<f32>().unwrap();
+        let new_rewards =
+            logits_to_scalars(&new_rewards.into_vec::<f32>().unwrap(), n_active, support_size);
+        let new_values =
+            logits_to_scalars(&new_values.into_vec::<f32>().unwrap(), n_active, support_size);
         let new_policies = new_policies.into_vec::<f32>().unwrap();
 
         // Expansion + backprop, one rayon task per tree

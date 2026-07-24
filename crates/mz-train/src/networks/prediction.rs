@@ -17,7 +17,8 @@ pub struct PredictionModel<B: Backend> {
 }
 
 impl<B: Backend> PredictionModel<B> {
-    /// Returns (value, policy)
+    /// Returns (value_logits, policy). value_logits is a categorical
+    /// distribution over the value support (see `support`).
     pub fn forward(&self, hidden: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         let mut x = hidden;
         for layer in &self.backbone {
@@ -41,6 +42,7 @@ pub struct PredictionModelConfig {
     pub hidden_size: usize,
     pub action_space: usize,
     pub n_layers: usize,
+    pub value_support: usize,
 }
 
 impl PredictionModelConfig {
@@ -58,7 +60,7 @@ impl PredictionModelConfig {
         PredictionModel {
             backbone,
             value1: LinearConfig::new(self.fc_hidden_size, self.fc_hidden_size).init(device),
-            value2: LinearConfig::new(self.fc_hidden_size, 1).init(device),
+            value2: LinearConfig::new(self.fc_hidden_size, self.value_support).init(device),
             policy1: LinearConfig::new(self.fc_hidden_size, self.fc_hidden_size).init(device),
             policy2: LinearConfig::new(self.fc_hidden_size, self.action_space).init(device),
             relu: Relu,
@@ -80,13 +82,13 @@ mod tests {
 
         let device = Default::default();
 
-        let model = PredictionModelConfig::new(16, 8, 2, 2).init::<MyBackend>(&device);
+        let model = PredictionModelConfig::new(16, 8, 2, 2, 7).init::<MyBackend>(&device);
         let t1 = Tensor::<MyBackend, 2, Float>::from_floats(
             [[1.0, 2.0, 0.5, 4.0, 0.0, 0.0, 0.0, 0.0]],
             &device,
         );
         let (value, policy) = model.forward(t1);
-        assert_eq!(value.dims(), [1, 1]);
+        assert_eq!(value.dims(), [1, 7]);
         assert_eq!(policy.dims(), [1, 2]);
     }
 }

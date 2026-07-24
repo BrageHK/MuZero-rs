@@ -13,7 +13,8 @@ use burn::{
 
 use crate::mz_config::MuZeroConfig;
 
-/// (hidden_state, reward, value, policy)
+/// (hidden_state, reward_logits, value_logits, policy). reward_logits and
+/// value_logits are categorical distributions over the support (see `support`).
 pub type MuZeroOutput<B> = (Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>);
 
 /// Appendix G: scale the hidden state to the same range as the action input
@@ -37,15 +38,17 @@ pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
         action_size: usize,
     ) -> (Tensor<B, 2>, Tensor<B, 2>);
 
-    /// Returns (value, policy)
+    /// Returns (value_logits, policy)
     fn predict(&self, hidden: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>);
 
-    /// returns (hidden_state, reward, value, policy). reward is zero at the root
+    /// returns (hidden_state, reward_logits, value_logits, policy). reward is a
+    /// zero distribution at the root (softmax of zeros decodes to scalar 0).
     fn initial_inference(&self, obs: Tensor<B, 2>) -> MuZeroOutput<B> {
         let hidden_state = scale_hidden_state(self.represent(obs));
         let (value, policy) = self.predict(hidden_state.clone());
         let batch_size = hidden_state.dims()[0];
-        let reward = Tensor::zeros([batch_size, 1], &hidden_state.device());
+        let support_len = value.dims()[1];
+        let reward = Tensor::zeros([batch_size, support_len], &hidden_state.device());
         (hidden_state, reward, value, policy)
     }
 
