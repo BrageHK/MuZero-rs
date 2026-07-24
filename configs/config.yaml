@@ -55,7 +55,7 @@ inference_update_interval: 1 # update inference network every N training steps
 checkpoint_interval: 1000 # save network checkpoint to model/env_name every N training steps
 
 # Exploration/Exploitation
-dirichlet_noise: 1
+dirichlet_alpha: 1
 root_exploration_fraction: 0.25
 
 # Plotting
@@ -78,7 +78,7 @@ temperature_schedule:
       tau: 0.25
 
 # Parallel settings
-min_rayon_threads: 512
+rayon_min_chunk_len: 512
 
 # Optional: checkpoint under model/ to init agent from (path w/o .mpk ext, e.g. "model/latest" or "model/best").
 # null/omitted = fresh random init.

@@ -34,6 +34,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     mz_conf: &MuZeroConfig,
     mz_agent: &N,
     tau: f32,
+    add_exploration_noise: bool,
 ) -> Vec<SearchReturn> {
     let batch_size = observations.dims()[0];
     let device = observations.device();
@@ -61,8 +62,12 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
 
     let (root_hidden_states, root_rewards, root_values, root_policies) =
         mz_agent.initial_inference(observations);
-    let alpha = mz_conf.dirichlet_noise;
-    let frac = mz_conf.root_exploration_fraction;
+    let alpha = mz_conf.dirichlet_alpha;
+    let frac = if add_exploration_noise {
+        mz_conf.root_exploration_fraction
+    } else {
+        0.0
+    };
 
     let [root_rewards, root_values, root_policies] = Transaction::default()
         .register(root_rewards)
@@ -119,7 +124,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
 
     node_batch
         .par_iter_mut()
-        .with_min_len(mz_conf.min_rayon_threads)
+        .with_min_len(mz_conf.rayon_min_chunk_len)
         .enumerate()
         .for_each(|(i, nodes)| {
             let row = active[i];
@@ -160,7 +165,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
             .par_iter()
             .zip(norms.par_iter())
             .zip(path_batch.par_iter_mut())
-            .with_min_len(mz_conf.min_rayon_threads)
+            .with_min_len(mz_conf.rayon_min_chunk_len)
             .map(|((nodes, norm), path)| {
                 let mut curr_node_idx = 0;
                 path.clear();
@@ -178,7 +183,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
 
                     // Find the best child
                     let mut best_puct = f32::NEG_INFINITY;
-                    let mut best_node = 0usize;
+                    let mut best_node = curr_node.first_child;
                     for (child_idx, child) in nodes.iter().enumerate().skip(curr_node.first_child).take(action_space) {
                         if !child.legal {
                             continue;
@@ -242,7 +247,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
             .par_iter_mut()
             .zip(path_batch.par_iter())
             .zip(norms.par_iter_mut())
-            .with_min_len(mz_conf.min_rayon_threads)
+            .with_min_len(mz_conf.rayon_min_chunk_len)
             .enumerate()
             .for_each(|(i, ((nodes, path), norm))| {
                 let leaf_idx = *path.last().unwrap();
@@ -300,7 +305,11 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
 
 fn extract_result(nodes: &[BatchNode], action_space: usize, tau: f32) -> SearchReturn {
     let root_node = &nodes[0];
-    let value = root_node.cumulative_value / (root_node.visits as f32);
+    let value = if root_node.visits == 0 {
+        0.0
+    } else {
+        root_node.cumulative_value / root_node.visits as f32
+    };
     let children = root_node.first_child..root_node.first_child + action_space;
 
     let total_visits: f32 = children
@@ -466,7 +475,7 @@ mod tests {
         );
 
         for tau in [0.0, 1.0] {
-            let results = batched_search(obs.clone(), None, &mz_conf, &agent, tau);
+            let results = batched_search(obs.clone(), None, &mz_conf, &agent, tau, false);
             assert_eq!(results.len(), batch_size);
             for res in &results {
                 assert_eq!(res.distribution.len(), mz_conf.action_space);
@@ -494,7 +503,7 @@ mod tests {
         forced_mask[1] = true;
         let masks = vec![forced_mask, vec![true; mz_conf.action_space]];
 
-        let results = batched_search(obs, Some(&masks), &mz_conf, &agent, 1.0);
+        let results = batched_search(obs, Some(&masks), &mz_conf, &agent, 1.0, false);
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].best_action, 1);
         assert_eq!(results[0].distribution[1], 1.0);
@@ -521,7 +530,7 @@ mod tests {
 
         // With tau=1 the distribution is visits/total; root child visits sum
         // to num_simulations, so no probability mass can be lost.
-        let results = batched_search(obs, None, &mz_conf, &agent, 1.0);
+        let results = batched_search(obs, None, &mz_conf, &agent, 1.0, false);
         for res in &results {
             assert!(res.distribution.iter().all(|&p| (0.0..=1.0).contains(&p)));
         }

@@ -5,6 +5,7 @@ use burn::module::AutodiffModule;
 use burn::optim::adaptor::OptimizerAdaptor;
 use burn::grad_clipping::GradientClippingConfig;
 use burn::optim::decay::WeightDecayConfig;
+use burn::optim::momentum::MomentumConfig;
 use burn::optim::{
     Adam, AdamConfig, AdamW, AdamWConfig, GradientsParams, LearningRate, MultiGradientsParams,
     Optimizer, Sgd, SgdConfig,
@@ -59,6 +60,11 @@ where
                 SgdConfig::new()
                     .with_gradient_clipping(clip)
                     .with_weight_decay(weight_decay)
+                    .with_momentum(
+                        (mz_conf.momentum > 0.0).then(|| {
+                            MomentumConfig::new().with_momentum(mz_conf.momentum as f64)
+                        }),
+                    )
                     .init(),
             ),
         }

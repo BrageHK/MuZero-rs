@@ -1,7 +1,8 @@
 use std::mem;
 
 use burn::module::{AutodiffModule, Module};
-use burn::record::CompactRecorder;
+use burn::optim::Optimizer;
+use burn::record::{CompactRecorder, Recorder};
 use burn::tensor::Tensor;
 use burn::tensor::backend::Backend;
 use burn::{Dispatch, DispatchDevice};
@@ -34,6 +35,13 @@ fn main() {
 
     let mut agent: MlpNets<TrainB> = mz_conf.init_agent(&train_device);
     let mut optimizer = AnyOptimizer::<TrainB, MlpNets<TrainB>>::new(&mz_conf);
+    if let Some(ckpt) = &mz_conf.init_checkpoint {
+        let opt_path = std::path::Path::new(ckpt).with_file_name("optimizer");
+        match CompactRecorder::new().load(opt_path.clone(), &train_device) {
+            Ok(record) => optimizer = optimizer.load_record(record),
+            Err(e) => eprintln!("No optimizer state loaded from {opt_path:?}: {e}"),
+        }
+    }
     let mut inference_agent: MlpNets<InferB> =
         nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
 
@@ -47,7 +55,6 @@ fn main() {
 
     let total_steps = mz_conf.training_steps / training_steps_per_iteration as usize;
     let mut training_step = 0;
-    let mut env_steps = 0usize;
     let mut next_checkpoint = mz_conf.checkpoint_interval;
 
     with_env!(mz_conf, E => {
@@ -69,7 +76,8 @@ fn main() {
             let legal_masks: Vec<Vec<bool>> =
                 env_batch.iter().map(|env| env.legal_mask()).collect();
 
-            let results = batched_search(obs, Some(&legal_masks), &mz_conf, &inference_agent, tau);
+            let results =
+                batched_search(obs, Some(&legal_masks), &mz_conf, &inference_agent, tau, true);
 
             for (i, search_result) in results.iter().enumerate() {
                 let action = match WeightedIndex::new(&search_result.distribution) {
@@ -104,14 +112,16 @@ fn main() {
             }
 
             // Save model + buffer
-            env_steps += mz_conf.game_batch_size;
-            if mz_conf.checkpoint_interval > 0 && env_steps >= next_checkpoint {
+            if mz_conf.checkpoint_interval > 0 && training_step >= next_checkpoint {
                 let path = "model/".to_owned() + mz_conf.environment.as_ref();
                 std::fs::create_dir_all(&path).expect("Failed to create directory");
                 agent
                     .valid()
                     .save_file(format!("{path}/latest"), &CompactRecorder::new())
                     .expect("Failed to save checkpoint");
+                CompactRecorder::new()
+                    .record(optimizer.to_record(), format!("{path}/optimizer").into())
+                    .expect("Failed to save optimizer state");
                 next_checkpoint += mz_conf.checkpoint_interval;
                 save_buffer(&buffer, &format!("{path}/buffer.mpk"));
             }
@@ -172,7 +182,7 @@ fn reanalyze<InferB: Backend>(
             .iter()
             .map(|&idx| buffer.states[idx].legal_mask.clone())
             .collect();
-        let results = batched_search(obs, Some(&masks), mz_conf, inference_agent, 1.0);
+        let results = batched_search(obs, Some(&masks), mz_conf, inference_agent, 1.0, false);
         for (&idx, r) in idxs.iter().zip(results.iter()) {
             buffer.states[idx].policy = r.policy_target.clone();
             if !mz_conf.is_twoplayer {

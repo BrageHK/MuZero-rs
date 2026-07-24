@@ -49,10 +49,10 @@ fn run_group<N: MuZeroNets<B>>(c: &mut Criterion, group_name: &str) {
     let mut group = c.benchmark_group(group_name);
     group.sample_size(10);
 
-    // min_rayon_threads is rayon's with_min_len chunk size: usize::MAX keeps the
+    // rayon_min_chunk_len is rayon's with_min_len chunk size: usize::MAX keeps the
     // whole batch in one chunk (serial), the config value lets rayon split
     // (parallel). Both run per batch size to compare which is faster.
-    let config_min_len = MuZeroConfig::default().min_rayon_threads;
+    let config_min_len = MuZeroConfig::default().rayon_min_chunk_len;
 
     for n_games in BATCH_SIZES {
         let mut mz_conf = othello_conf();
@@ -75,14 +75,14 @@ fn run_group<N: MuZeroNets<B>>(c: &mut Criterion, group_name: &str) {
         for (mode, min_len) in [("serial", usize::MAX), ("parallel", config_min_len)] {
             if mode == "parallel" && min_len >= n_games {
                 println!(
-                    "skipping parallel/{n_games}: min_rayon_threads ({min_len}) >= batch size, \
+                    "skipping parallel/{n_games}: rayon_min_chunk_len ({min_len}) >= batch size, \
                      identical to serial — lower it in config.yaml to compare"
                 );
                 continue;
             }
-            mz_conf.min_rayon_threads = min_len;
+            mz_conf.rayon_min_chunk_len = min_len;
             group.bench_with_input(BenchmarkId::new(mode, n_games), &n_games, |b, _| {
-                b.iter(|| black_box(batched_search(obs.clone(), None, &mz_conf, &agent, 1.0)))
+                b.iter(|| black_box(batched_search(obs.clone(), None, &mz_conf, &agent, 1.0, false)))
             });
         }
     }

@@ -56,7 +56,7 @@ pub fn search<B: Backend>(
 
     // Initialize and expand root (node 0)
     let (root_hidden_state, root_reward, root_value, root_policy) = mz_agent.initial_forward(obs);
-    let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_noise; mz_conf.action_space]).unwrap();
+    let dirichlet = Dirichlet::new(&vec![mz_conf.dirichlet_alpha; mz_conf.action_space]).unwrap();
     let noise = dirichlet.sample(&mut rand::rng());
     let frac = mz_conf.root_exploration_fraction;
 

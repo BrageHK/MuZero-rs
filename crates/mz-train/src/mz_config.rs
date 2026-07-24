@@ -62,6 +62,7 @@ pub struct ResNetSubConfig {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct MuZeroConfig {
     pub network_type: NetworkType,
     pub environment: EnvironmentName,
@@ -80,8 +81,9 @@ pub struct MuZeroConfig {
     pub learning_rate: f64,
     pub grad_clip: f32,
     pub weight_decay: f32,
+    pub momentum: f32,
     pub num_simulations: usize,
-    pub dirichlet_noise: f32,
+    pub dirichlet_alpha: f32,
     pub root_exploration_fraction: f32,
     pub training_steps: usize,
     pub train_ratio: f32,
@@ -95,14 +97,14 @@ pub struct MuZeroConfig {
     pub inference_update_interval: usize,
     pub checkpoint_interval: usize,
 
-    // Chance to reanalyze a sample scales with its age. 0.0 disables.
+    // Per-step probability of running a reanalyze pass. 0.0 disables.
     #[serde(default)]
     pub reanalyze_fraction: f32,
     #[serde(default = "default_reanalyze_pool")]
     pub reanalyze_batch_size: usize,
 
-    // None = set automatically
-    pub min_rayon_threads: usize,
+    // rayon with_min_len chunk size: batches smaller than this run serially.
+    pub rayon_min_chunk_len: usize,
 
     // Original muzero paper uses t = 1 first 500k steps, t = 0.5 for next 250k and 0.25 for remaining
     pub temperature_schedule: Vec<TemperatureSchedule>,
@@ -163,8 +165,39 @@ impl MuZeroConfig {
     }
 }
 
+fn validate(conf: &MuZeroConfig) {
+    assert!(
+        conf.discount > 0.0 && conf.discount <= 1.0,
+        "discount must be in (0, 1], got {}",
+        conf.discount
+    );
+    assert!(
+        conf.learning_rate > 0.0,
+        "learning_rate must be > 0, got {}",
+        conf.learning_rate
+    );
+    assert!(
+        conf.weight_decay >= 0.0 && conf.weight_decay < 1.0,
+        "weight_decay must be in [0, 1), got {}",
+        conf.weight_decay
+    );
+    assert!(
+        (0.0..=1.0).contains(&conf.root_exploration_fraction),
+        "root_exploration_fraction must be in [0, 1], got {}",
+        conf.root_exploration_fraction
+    );
+    assert!(conf.training_batch_size >= 1, "training_batch_size must be >= 1");
+    assert!(conf.game_batch_size >= 1, "game_batch_size must be >= 1");
+    assert!(conf.num_simulations >= 1, "num_simulations must be >= 1");
+    assert!(conf.unroll_steps >= 1, "unroll_steps must be >= 1");
+    assert!(conf.n_steps >= 1, "n_steps must be >= 1");
+    assert!(conf.buffer_size >= 1, "buffer_size must be >= 1");
+}
+
 fn get_conf(file_content: String) -> MuZeroConfig {
-    let mut conf: MuZeroConfig = serde_yaml::from_str(&file_content).unwrap();
+    let mut conf: MuZeroConfig =
+        serde_yaml::from_str(&file_content).expect("Failed to parse configs/config.yaml");
+    validate(&conf);
     with_env!(conf, E => {
         let env = E::default();
 

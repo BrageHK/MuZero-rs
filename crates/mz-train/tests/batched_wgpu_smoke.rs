@@ -15,7 +15,7 @@ fn batched_search_wgpu() {
         burn::tensor::Distribution::Uniform(-1.0, 1.0),
         &device,
     );
-    let results = batched_search(obs, None, &mz_conf, &agent, 1.0);
+    let results = batched_search(obs, None, &mz_conf, &agent, 1.0, false);
     assert_eq!(results.len(), 4);
     for res in &results {
         let sum: f32 = res.distribution.iter().sum();

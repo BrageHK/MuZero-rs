@@ -63,12 +63,16 @@ where
         };
 
         // Appendix G: Training
-        let k = mz_conf.unroll_steps as f32;
-        let value_loss = (value - target_value).powf_scalar(2.0).mean() / k;
+        let step_scale = if step == 0 {
+            1.0
+        } else {
+            1.0 / (mz_conf.unroll_steps as f32 - 1.0).max(1.0)
+        };
+        let value_loss = (value - target_value).powf_scalar(2.0).mean() * step_scale;
         let policy_loss = -(target_policy * (policy + POLICY_LOSS_EPS).log())
             .sum_dim(1)
             .mean()
-            / k;
+            * step_scale;
         loss = loss + value_loss + policy_loss;
 
         if hidden_state.is_some() {
@@ -76,7 +80,7 @@ where
                 sequence.iter().map(|game| game[step - 1].reward).collect();
             let target_reward =
                 Tensor::<B, 1>::from_floats(target_reward.as_slice(), device).unsqueeze_dim(1);
-            let reward_loss = (reward - target_reward).powf_scalar(2.0).mean() / k;
+            let reward_loss = (reward - target_reward).powf_scalar(2.0).mean() * step_scale;
             loss = loss + reward_loss;
         }
 

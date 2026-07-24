@@ -27,6 +27,7 @@ fn bench_search_wgpu(c: &mut Criterion) {
                 black_box(&mz_conf),
                 black_box(&agent),
                 black_box(1.0),
+                false,
             )
         })
     });
@@ -48,6 +49,7 @@ fn bench_search_ndarray(c: &mut Criterion) {
                 black_box(&mz_conf),
                 black_box(&agent),
                 black_box(1.0),
+                false,
             )
         })
     });

@@ -94,7 +94,10 @@ impl ReplayBuffer {
 
         for state_idx in idx..idx + mz_config.unroll_steps {
             if let Some(ref abs) = absorbing {
-                sequence.push(abs.clone());
+                sequence.push(BufferData {
+                    action: self.rng.usize(0..mz_config.action_space),
+                    ..abs.clone()
+                });
                 continue;
             }
             if state_idx >= self.states.len() {
@@ -104,7 +107,10 @@ impl ReplayBuffer {
                     policy: uniform_policy.clone(),
                     ..sequence.last().expect("sequence has at least one state").clone()
                 };
-                sequence.push(abs.clone());
+                sequence.push(BufferData {
+                    action: self.rng.usize(0..mz_config.action_space),
+                    ..abs.clone()
+                });
                 absorbing = Some(abs);
                 continue;
             }
@@ -149,9 +155,14 @@ impl ReplayBuffer {
             value += mz_config.discount.powi(k as i32) * state.reward;
         }
         let bootstrap_idx = idx + mz_config.n_steps;
-        if bootstrap_idx < self.states.len() && !self.states[bootstrap_idx].is_terminal {
-            value += mz_config.discount.powi(mz_config.n_steps as i32)
-                * self.states[bootstrap_idx].value;
+        if bootstrap_idx < self.states.len() {
+            let state = &self.states[bootstrap_idx];
+            let bootstrap = if state.is_terminal {
+                state.reward
+            } else {
+                state.value
+            };
+            value += mz_config.discount.powi(mz_config.n_steps as i32) * bootstrap;
         }
         value
     }

@@ -120,7 +120,7 @@ fn play_two_player<B: Backend, E: Playable>(
         } else {
             let obs = env.state_tensor::<B>(device);
             let results =
-                batched_search(obs, Some(std::slice::from_ref(&mask)), mz_conf, agent, 1.0);
+                batched_search(obs, Some(std::slice::from_ref(&mask)), mz_conf, agent, 1.0, false);
             let result = &results[0];
             print!("Search distribution:");
             for (a, &p) in result.distribution.iter().enumerate() {
@@ -164,7 +164,7 @@ fn play_single_player<B: Backend>(mz_conf: &MuZeroConfig, agent: &MlpNets<B>, de
 
     loop {
         let obs = env.state_tensor::<B>(device);
-        let results = batched_search(obs, None, mz_conf, agent, 0.10);
+        let results = batched_search(obs, None, mz_conf, agent, 0.10, false);
         let action = WeightedIndex::new(&results[0].distribution)
             .unwrap()
             .sample(&mut rng);

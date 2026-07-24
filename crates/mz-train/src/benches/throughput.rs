@@ -30,7 +30,7 @@ fn play_games_lockstep<B: Backend>(
     let mut completed = 0u64;
     while completed < target_games {
         let obs = CartPoleWrapper::batch_state_tensor::<B>(&envs, device);
-        let results = batched_search(obs, None, mz_conf, agent, 1.0);
+        let results = batched_search(obs, None, mz_conf, agent, 1.0, false);
         for (env, res) in envs.iter_mut().zip(&results) {
             let dist = WeightedIndex::new(&res.distribution).unwrap();
             let action = dist.sample(&mut rng);
