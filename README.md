@@ -27,15 +27,14 @@ export HIP_PATH=/opt/rocm
 export HSA_OVERRIDE_GFX_VERSION=11.0.0
 ```
 
+## Training
+
+```bash
+cargo run -r --bin train
+```
+
 # Result
 
 After running the parallel training for a few minutes on a M2 Pro mac, the agent learns to play CartPole perfectly.
 
 ![Cartpole](media/cartpole.gif)
-
-# TODO:
-
-* [ ] Reanalyze
-* [ ] TicTacToe
-* [ ] Othello
-* [ ] WASM - play against muzero in othello
