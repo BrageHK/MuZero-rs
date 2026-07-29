@@ -7,6 +7,7 @@ version = "0.1.0"
 edition = "2024"
 
 [patch.crates-io]
+ale = { path = "vendor/ale" }
 ale-sys = { path = "vendor/ale-sys" }
 
 [workspace.dependencies]

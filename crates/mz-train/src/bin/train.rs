@@ -70,7 +70,6 @@ fn main() {
                 break;
             }
             let tau = tau_for_step(&mz_conf.temperature_schedule, training_step);
-            tui.set_tau(tau);
 
             let obs = E::batch_state_tensor::<InferB>(&env_batch, &infer_device);
             let legal_masks: Vec<Vec<bool>> =
@@ -144,16 +143,22 @@ fn main() {
                     tui.set_loss(loss);
                 }
 
-                training_step += 1;
-                // Update inference agent every n training steps
-                if (training_step + 1) % mz_conf.inference_update_interval.max(1) == 0 {
-                    inference_agent = nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
+                match loss {
+                    Some(_) => {
+                        training_step += 1;
+                        // Update inference agent every n training steps
+                        if (training_step + 1) % mz_conf.inference_update_interval.max(1) == 0 {
+                            inference_agent = nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
+                        }
+                        tui.add_train_steps(1);
+                    },
+                    None => ()
                 }
             }
 
             // Tui stuff
-            tui.add_train_steps(training_steps_per_iteration as usize);
             tui.add_env_steps(mz_conf.game_batch_size, buffer.states.len() > mz_conf.training_batch_size);
+            tui.set_tau(tau);
             tui.set_buffer_states(buffer.states.len());
             tui.render(training_step + 1);
         }

@@ -71,3 +71,8 @@ harness = false
 name = "batched_throughput"
 path = "src/benches/batched_throughput.rs"
 harness = false
+
+[[bench]]
+name = "env_step_parallel"
+path = "src/benches/env_step_parallel.rs"
+harness = false

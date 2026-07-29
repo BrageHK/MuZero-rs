@@ -12,21 +12,21 @@ atari_game: Breakout
 # This config learns CartPole in a few minutes on CPU only
 linear:
     representation:
-        latent_space_dims: 8
+        latent_space_dims: 4
         fc_hidden_size: 8
         n_layers: 3
     dynamic:
-        latent_space_dims: 8
+        latent_space_dims: 4
         fc_hidden_size: 8
         n_layers: 3
     prediction:
-        latent_space_dims: 8
+        latent_space_dims: 4
         fc_hidden_size: 8
         n_layers: 3
 
 # Only relevant when choosing ResNet above
 resnet:
-    obs_channels: 3
+    obs_channels: 1
     channels: 32
     n_blocks: 4
     fc_hidden_size: 64
@@ -42,29 +42,29 @@ n_steps: 5
 unroll_steps: 5
 
 # Batch sizes
-training_batch_size: 32
-game_batch_size: 4096
+training_batch_size: 2048
+game_batch_size: 2048
 
 # Optimizer
 optimizer: Sgd # AdamW, Adam, Sgd
 discount: 0.997
 learning_rate: 0.001
-grad_clip: 5.0
+grad_clip: 1.0
 weight_decay: 1e-4
 momentum: 0.9
 
 train_ratio: 2
-num_simulations: 35
+num_simulations: 50
 
 # Categorical value/reward support. Heads predict a distribution over
 # 2*support_size+1 bins under the invertible scaling transform (paper App. F).
-support_size: 50
+support_size: 300
 
-inference_update_interval: 1 # update inference network every N training steps
+inference_update_interval: 100 # update inference network every N training steps
 checkpoint_interval: 1000 # save network checkpoint to model/env_name every N training steps
 
 # Exploration/Exploitation
-dirichlet_alpha: 1
+dirichlet_alpha: 0.25
 root_exploration_fraction: 0.25
 
 # Plotting
@@ -91,5 +91,4 @@ rayon_min_chunk_len: 512
 
 # Optional: checkpoint under model/ to init agent from (path w/o .mpk ext, e.g. "model/latest" or "model/best").
 # null/omitted = fresh random init.
-# NOTE: old checkpoints predate the Vec<Linear> refactor (param paths changed) and no longer load.
 init_checkpoint: null

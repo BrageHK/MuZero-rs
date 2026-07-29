@@ -79,7 +79,12 @@ impl Clone for AtariEnv {
 
 impl AtariEnv {
     pub fn new(game: AtariGame) -> Self {
+        Self::with_seed(game, (rand::random::<u32>() >> 1) as i32)
+    }
+
+    pub fn with_seed(game: AtariGame, seed: i32) -> Self {
         let mut ale = Ale::new();
+        ale.set_int("random_seed", seed);
         ale.load_rom(game.rom()).expect("failed to load Atari ROM");
         let mut env = Self {
             ale,
