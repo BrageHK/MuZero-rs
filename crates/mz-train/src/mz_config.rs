@@ -27,6 +27,32 @@ pub enum NetworkType {
     ResNet,
 }
 
+/// Puct: MuZero PUCT with Dirichlet root noise and visit-count policy targets.
+/// Gumbel: Gumbel MuZero (Danihelka et al. 2022) — Sequential Halving over
+/// Gumbel-perturbed logits at the root, improved-policy targets.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub enum SearchAlgorithm {
+    #[default]
+    Puct,
+    Gumbel,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PuctSubConfig {
+    pub dirichlet_alpha: f32,
+    pub root_exploration_fraction: f32,
+    // Original muzero paper uses t = 1 first 500k steps, t = 0.5 for next 250k
+    // and 0.25 for remaining.
+    pub temperature_schedule: Vec<TemperatureSchedule>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GumbelSubConfig {
+    pub max_num_considered_actions: usize,
+    pub c_visit: f32,
+    pub c_scale: f32,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, AsRefStr)]
 pub enum EnvironmentName {
     CartPole,
@@ -90,8 +116,14 @@ pub struct MuZeroConfig {
     pub num_simulations: usize,
     #[serde(default = "default_support_size")]
     pub support_size: usize,
-    pub dirichlet_alpha: f32,
-    pub root_exploration_fraction: f32,
+
+    #[serde(default)]
+    pub search_algorithm: SearchAlgorithm,
+    #[serde(default)]
+    pub puct: Option<PuctSubConfig>,
+    #[serde(default)]
+    pub gumbel: Option<GumbelSubConfig>,
+
     pub training_steps: usize,
     pub train_ratio: f32,
     pub buffer_size: usize,
@@ -112,9 +144,6 @@ pub struct MuZeroConfig {
 
     // rayon with_min_len chunk size: batches smaller than this run serially.
     pub rayon_min_chunk_len: usize,
-
-    // Original muzero paper uses t = 1 first 500k steps, t = 0.5 for next 250k and 0.25 for remaining
-    pub temperature_schedule: Vec<TemperatureSchedule>,
 
     // None => random init
     #[serde(default)]
@@ -192,11 +221,6 @@ fn validate(conf: &MuZeroConfig) {
         "weight_decay must be in [0, 1), got {}",
         conf.weight_decay
     );
-    assert!(
-        (0.0..=1.0).contains(&conf.root_exploration_fraction),
-        "root_exploration_fraction must be in [0, 1], got {}",
-        conf.root_exploration_fraction
-    );
     assert!(conf.training_batch_size >= 1, "training_batch_size must be >= 1");
     assert!(conf.game_batch_size >= 1, "game_batch_size must be >= 1");
     assert!(conf.num_simulations >= 1, "num_simulations must be >= 1");
@@ -204,6 +228,47 @@ fn validate(conf: &MuZeroConfig) {
     assert!(conf.n_steps >= 1, "n_steps must be >= 1");
     assert!(conf.buffer_size >= 1, "buffer_size must be >= 1");
     assert!(conf.support_size >= 1, "support_size must be >= 1");
+    if let SearchAlgorithm::Puct = conf.search_algorithm {
+        let puct = conf
+            .puct
+            .as_ref()
+            .expect("search_algorithm: Puct requires a `puct:` section in the config");
+        assert!(
+            (0.0..=1.0).contains(&puct.root_exploration_fraction),
+            "root_exploration_fraction must be in [0, 1], got {}",
+            puct.root_exploration_fraction
+        );
+        assert!(
+            puct.dirichlet_alpha > 0.0,
+            "dirichlet_alpha must be > 0, got {}",
+            puct.dirichlet_alpha
+        );
+        assert!(
+            !puct.temperature_schedule.is_empty(),
+            "temperature_schedule must have at least one entry"
+        );
+    }
+    if let SearchAlgorithm::Gumbel = conf.search_algorithm {
+        let gumbel = conf
+            .gumbel
+            .as_ref()
+            .expect("search_algorithm: Gumbel requires a `gumbel:` section in the config");
+        assert!(
+            gumbel.max_num_considered_actions >= 1,
+            "max_num_considered_actions must be >= 1, got {}",
+            gumbel.max_num_considered_actions
+        );
+        assert!(
+            gumbel.c_scale > 0.0,
+            "c_scale must be > 0, got {}",
+            gumbel.c_scale
+        );
+        assert!(
+            gumbel.c_visit >= 0.0,
+            "c_visit must be >= 0, got {}",
+            gumbel.c_visit
+        );
+    }
 }
 
 fn get_conf(file_content: String) -> MuZeroConfig {
@@ -249,6 +314,18 @@ impl MuZeroConfig {
         self.resnet
             .as_ref()
             .expect("network_type: ResNet requires a `resnet:` section in the config")
+    }
+
+    pub fn puct(&self) -> &PuctSubConfig {
+        self.puct
+            .as_ref()
+            .expect("search_algorithm: Puct requires a `puct:` section in the config")
+    }
+
+    pub fn gumbel(&self) -> &GumbelSubConfig {
+        self.gumbel
+            .as_ref()
+            .expect("search_algorithm: Gumbel requires a `gumbel:` section in the config")
     }
 
     pub fn support_len(&self) -> usize {

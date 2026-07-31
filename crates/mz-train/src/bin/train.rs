@@ -9,7 +9,7 @@ use burn::{Dispatch, DispatchDevice};
 use mz_rs::env::Environment;
 
 use mz_rs::agent::MlpNets;
-use mz_rs::mz_config::MuZeroConfig;
+use mz_rs::mz_config::{MuZeroConfig, SearchAlgorithm};
 use mz_rs::networks::nets_to_backend;
 use mz_rs::optim::AnyOptimizer;
 use mz_rs::replay_buffer::{BufferData, ReplayBuffer};
@@ -69,7 +69,12 @@ fn main() {
             if tui.should_stop() {
                 break;
             }
-            let tau = tau_for_step(&mz_conf.temperature_schedule, training_step);
+            let tau = match mz_conf.search_algorithm {
+                SearchAlgorithm::Puct => {
+                    tau_for_step(&mz_conf.puct().temperature_schedule, training_step)
+                }
+                SearchAlgorithm::Gumbel => 0.0,
+            };
 
             let obs = E::batch_state_tensor::<InferB>(&env_batch, &infer_device);
             let legal_masks: Vec<Vec<bool>> =
@@ -79,9 +84,12 @@ fn main() {
                 batched_search(obs, Some(&legal_masks), &mz_conf, &inference_agent, tau, true);
 
             for (i, search_result) in results.iter().enumerate() {
-                let action = match WeightedIndex::new(&search_result.distribution) {
-                    Ok(dist) => dist.sample(&mut rand::rng()),
-                    Err(_) => search_result.best_action,
+                let action = match mz_conf.search_algorithm {
+                    SearchAlgorithm::Gumbel => search_result.best_action,
+                    SearchAlgorithm::Puct => match WeightedIndex::new(&search_result.distribution) {
+                        Ok(dist) => dist.sample(&mut rand::rng()),
+                        Err(_) => search_result.best_action,
+                    },
                 };
 
                 let state: Vec<f32> = env_batch[i].obs();
@@ -143,16 +151,13 @@ fn main() {
                     tui.set_loss(loss);
                 }
 
-                match loss {
-                    Some(_) => {
-                        training_step += 1;
-                        // Update inference agent every n training steps
-                        if (training_step + 1) % mz_conf.inference_update_interval.max(1) == 0 {
-                            inference_agent = nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
-                        }
-                        tui.add_train_steps(1);
-                    },
-                    None => ()
+                if loss.is_some() {
+                    training_step += 1;
+                    // Update inference agent every n training steps
+                    if (training_step + 1) % mz_conf.inference_update_interval.max(1) == 0 {
+                        inference_agent = nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
+                    }
+                    tui.add_train_steps(1);
                 }
             }
 

@@ -3,7 +3,7 @@ use burn::{
     config::Config,
     module::Module,
     nn::{Linear, LinearConfig, Relu},
-    tensor::{activation::softmax, backend::Backend},
+    tensor::backend::Backend,
 };
 
 #[derive(Module, Debug)]
@@ -17,7 +17,7 @@ pub struct PredictionModel<B: Backend> {
 }
 
 impl<B: Backend> PredictionModel<B> {
-    /// Returns (value_logits, policy). value_logits is a categorical
+    /// Returns (value_logits, policy_logits). value_logits is a categorical
     /// distribution over the value support (see `support`).
     pub fn forward(&self, hidden: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         let mut x = hidden;
@@ -30,7 +30,6 @@ impl<B: Backend> PredictionModel<B> {
 
         let policy = self.relu.forward(self.policy1.forward(x));
         let policy = self.policy2.forward(policy);
-        let policy = softmax(policy, 1);
 
         (value, policy)
     }

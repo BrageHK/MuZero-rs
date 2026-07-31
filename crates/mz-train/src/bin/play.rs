@@ -281,7 +281,9 @@ fn main() {
     type B = Dispatch;
 
     let mut mz_conf = MuZeroConfig::new::<B>("configs/config.yaml");
-    mz_conf.root_exploration_fraction = 0.0;
+    if let Some(puct) = mz_conf.puct.as_mut() {
+        puct.root_exploration_fraction = 0.0;
+    }
     assert!(
         mz_conf.init_checkpoint.is_some(),
         "Set init_checkpoint in config.yaml (e.g. \"model/TicTacToe/latest\") to play a trained model"

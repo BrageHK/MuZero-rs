@@ -1,15 +1,11 @@
 use burn::{
-    module::AutodiffModule,
-    optim::{GradientsParams, Optimizer},
-    tensor::{Int, Tensor, activation::log_softmax, backend::AutodiffBackend, cast::ToElement},
+    module::AutodiffModule,  optim::{GradientsParams, Optimizer}, tensor::{Int, Tensor, activation::log_softmax, backend::AutodiffBackend, cast::ToElement},
 };
 
 use crate::{
     mz_config::MuZeroConfig, networks::MuZeroNets, replay_buffer::ReplayBuffer,
     support::two_hot_batch,
 };
-
-const POLICY_LOSS_EPS: f32 = 1e-8;
 
 pub fn train<B: AutodiffBackend, N, O>(
     mut agent: N,
@@ -77,12 +73,10 @@ where
         } else {
             1.0 / (mz_conf.unroll_steps as f32 - 1.0).max(1.0)
         };
-        let value_loss =
+        let value_loss = 
             -(target_value * log_softmax(value, 1)).sum_dim(1).mean() * step_scale;
-        let policy_loss = -(target_policy * (policy + POLICY_LOSS_EPS).log())
-            .sum_dim(1)
-            .mean()
-            * step_scale;
+        let policy_loss =
+            -(target_policy * log_softmax(policy, 1)).sum_dim(1).mean() * step_scale;
         loss = loss + value_loss + policy_loss;
 
         if hidden_state.is_some() {

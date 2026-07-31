@@ -26,6 +26,7 @@ CLAUDE.md
 .DS_Store
 
 psudocode.py
+psudocode/*
 
 .vscode
 build/

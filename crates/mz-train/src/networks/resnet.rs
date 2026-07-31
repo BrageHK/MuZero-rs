@@ -6,7 +6,7 @@ use burn::{
         BatchNorm, BatchNormConfig, Linear, LinearConfig, PaddingConfig2d, Relu,
         conv::{Conv2d, Conv2dConfig},
     },
-    tensor::{Int, activation::softmax, backend::Backend},
+    tensor::{Int, backend::Backend},
 };
 
 use crate::mz_config::MuZeroConfig;
@@ -115,7 +115,7 @@ pub struct ResNetPrediction<B: Backend> {
 }
 
 impl<B: Backend> ResNetPrediction<B> {
-    /// Returns (value, policy)
+    /// Returns (value_logits, policy_logits)
     pub fn forward(&self, hidden: Tensor<B, 4>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         let n = hidden.dims()[0] as i32;
 
@@ -124,7 +124,6 @@ impl<B: Backend> ResNetPrediction<B> {
                 .forward(self.policy_conv.forward(hidden.clone())),
         );
         let policy = self.policy_fc.forward(policy.reshape([n, -1]));
-        let policy = softmax(policy, 1);
 
         let value = self
             .relu
@@ -249,6 +248,7 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
 #[cfg(test)]
 mod tests {
     use burn::backend::Wgpu;
+    use burn::tensor::activation::softmax;
 
     use super::*;
     use crate::networks::MuZeroNets;
@@ -292,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn policy_is_normalized_and_root_reward_zero() {
+    fn policy_softmaxes_and_root_reward_zero() {
         let device = Default::default();
         let nets = test_nets(&device);
 
@@ -306,7 +306,7 @@ mod tests {
         let rewards = reward.into_data().to_vec::<f32>().unwrap();
         assert!(rewards.iter().all(|r| *r == 0.0));
 
-        let rows = policy.into_data().to_vec::<f32>().unwrap();
+        let rows = softmax(policy, 1).into_data().to_vec::<f32>().unwrap();
         for row in rows.chunks(5) {
             let sum: f32 = row.iter().sum();
             assert!((sum - 1.0).abs() < 1e-4, "policy row sums to {sum}");

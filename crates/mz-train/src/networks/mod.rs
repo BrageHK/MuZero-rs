@@ -13,8 +13,9 @@ use burn::{
 
 use crate::mz_config::MuZeroConfig;
 
-/// (hidden_state, reward_logits, value_logits, policy). reward_logits and
+/// (hidden_state, reward_logits, value_logits, policy_logits). reward_logits and
 /// value_logits are categorical distributions over the support (see `support`).
+/// policy_logits are unnormalized; apply softmax at the use site.
 pub type MuZeroOutput<B> = (Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>);
 
 /// Appendix G: scale the hidden state to the same range as the action input
@@ -38,10 +39,10 @@ pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
         action_size: usize,
     ) -> (Tensor<B, 2>, Tensor<B, 2>);
 
-    /// Returns (value_logits, policy)
+    /// Returns (value_logits, policy_logits)
     fn predict(&self, hidden: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>);
 
-    /// returns (hidden_state, reward_logits, value_logits, policy). reward is a
+    /// returns (hidden_state, reward_logits, value_logits, policy_logits). reward is a
     /// zero distribution at the root (softmax of zeros decodes to scalar 0).
     fn initial_inference(&self, obs: Tensor<B, 2>) -> MuZeroOutput<B> {
         let hidden_state = scale_hidden_state(self.represent(obs));
@@ -52,7 +53,7 @@ pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
         (hidden_state, reward, value, policy)
     }
 
-    /// returns (hidden_state, reward, value, policy)
+    /// returns (hidden_state, reward_logits, value_logits, policy_logits)
     fn recurrent_inference(
         &self,
         hidden: Tensor<B, 2>,
