@@ -1,4 +1,3 @@
-use crate::env::Environment;
 use crate::env::othello::env::{Othello, moves};
 use crate::eval::opponent::BoardGame;
 
@@ -60,6 +59,7 @@ impl BoardGame for Othello {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::env::Environment;
 
     #[test]
     fn opening_position_is_symmetric() {

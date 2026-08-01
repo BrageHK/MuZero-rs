@@ -12,7 +12,7 @@ use burn::{
     tensor::{Int, backend::Backend},
 };
 
-use crate::mz_config::MuZeroConfig;
+use crate::config::NetConfig;
 
 /// (hidden_state, reward_logits, value_logits, policy_logits). reward_logits and
 /// value_logits are categorical distributions over the support (see `support`).
@@ -29,7 +29,7 @@ pub fn scale_hidden_state<B: Backend>(hidden: Tensor<B, 2>) -> Tensor<B, 2> {
 }
 
 pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
-    fn init(mz_conf: &MuZeroConfig, device: &B::Device) -> Self;
+    fn init(net_conf: &NetConfig, device: &B::Device) -> Self;
 
     fn represent(&self, obs: Tensor<B, 2>) -> Tensor<B, 2>;
 
@@ -74,11 +74,11 @@ pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
 
 pub fn nets_to_backend<B1: Backend, B2: Backend, N1: MuZeroNets<B1>, N2: MuZeroNets<B2>>(
     nets: &N1,
-    mz_conf: &MuZeroConfig,
+    net_conf: &NetConfig,
     device: &B2::Device,
 ) -> N2 {
     let recorder = BinBytesRecorder::<FullPrecisionSettings>::default();
     let bytes = recorder.record(nets.clone().into_record(), ()).unwrap();
     let record = recorder.load(bytes, device).unwrap();
-    N2::init(mz_conf, device).load_record(record)
+    N2::init(net_conf, device).load_record(record)
 }

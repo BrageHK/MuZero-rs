@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MuZero Othello</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>MuZero Othello</h1>
+        <p class="sub" id="backend">loading agent…</p>
+      </header>
+
+      <div class="score">
+        <div class="side" id="side-black">
+          <span class="disc black"></span>
+          <span class="count" id="count-black">2</span>
+        </div>
+        <div class="status" id="status">your move</div>
+        <div class="side" id="side-white">
+          <span class="count" id="count-white">2</span>
+          <span class="disc white"></span>
+        </div>
+      </div>
+
+      <div class="board" id="board" aria-label="Othello board"></div>
+
+      <div class="controls">
+        <button id="new-game">New game</button>
+        <button id="undo" disabled>Undo</button>
+        <label class="colour">
+          <span>Play</span>
+          <select id="colour">
+            <option value="black" selected>black</option>
+            <option value="white">white</option>
+          </select>
+        </label>
+        <label class="sims">
+          <span>Simulations <b id="sims-value">16</b></span>
+          <input id="sims" type="range" min="8" max="128" step="8" value="16" />
+        </label>
+      </div>
+
+      <p class="eval" id="eval"></p>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

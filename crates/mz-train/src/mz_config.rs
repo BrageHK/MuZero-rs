@@ -5,6 +5,10 @@ use burn::tensor::backend::Backend;
 use serde::{Deserialize, Serialize};
 use strum::AsRefStr;
 
+pub use mz_core::config::{
+    LinearSubConfig, NetConfig, NetworkSubConfig, NetworkType, ProjectionSubConfig, ResNetSubConfig,
+};
+
 use crate::{
     env::Environment,
     env::atari::env::{AtariGame, set_atari_game},
@@ -19,12 +23,6 @@ pub enum OptimChoice {
     Adam,
     AdamW,
     Sgd,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum NetworkType {
-    Linear,
-    ResNet,
 }
 
 /// Puct: MuZero PUCT with Dirichlet root noise and visit-count policy targets.
@@ -190,45 +188,6 @@ pub fn default_ladder(environment: &EnvironmentName) -> Vec<RungConfig> {
 pub struct TemperatureSchedule {
     pub step: Option<usize>,
     pub tau: f32,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct NetworkSubConfig {
-    pub latent_space_dims: usize,
-    pub fc_hidden_size: usize,
-    pub n_layers: usize,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct LinearSubConfig {
-    pub representation: NetworkSubConfig,
-    pub dynamic: NetworkSubConfig,
-    pub prediction: NetworkSubConfig,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ResNetSubConfig {
-    pub obs_channels: usize,
-    pub channels: usize,
-    pub n_blocks: usize,
-    pub fc_hidden_size: usize,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ProjectionSubConfig {
-    pub proj_hidden: usize,
-    pub proj_out: usize,
-    pub pred_hidden: usize,
-}
-
-impl Default for ProjectionSubConfig {
-    fn default() -> Self {
-        ProjectionSubConfig {
-            proj_hidden: 256,
-            proj_out: 64,
-            pred_hidden: 128,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -555,9 +514,25 @@ impl MuZeroConfig {
         crate::support::support_len(self.support_size)
     }
 
+    /// The subset of the config that shapes the networks; the only part `mz-web`
+    /// needs to rebuild the same modules for the trained weights.
+    pub fn net_config(&self) -> NetConfig {
+        NetConfig {
+            network_type: self.network_type,
+            obs_dim: self.obs_dim,
+            action_space: self.action_space,
+            support_size: self.support_size,
+            board_height: self.board_height,
+            board_width: self.board_width,
+            linear: self.linear.clone(),
+            resnet: self.resnet.clone(),
+            projection: self.projection.clone(),
+        }
+    }
+
     /// Fresh random init of a network family, e.g. `mz_conf.init::<B, MlpNets<B>>(&device)`.
     pub fn init<B: Backend, N: MuZeroNets<B>>(&self, device: &B::Device) -> N {
-        N::init(self, device)
+        N::init(&self.net_config(), device)
     }
 
     /// Same as `init`, but loads weights from `init_checkpoint` if set in config.

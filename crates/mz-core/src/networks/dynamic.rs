@@ -3,7 +3,7 @@ use burn::{
     config::Config,
     module::Module,
     nn::{Linear, LinearConfig, Relu},
-    tensor::{Int, backend::Backend},
+    tensor::{IndexingUpdateOp, Int, backend::Backend},
 };
 
 #[derive(Module, Debug)]
@@ -32,14 +32,12 @@ impl<B: Backend> DynamicModelMLP<B> {
         // `hidden` is autodiff-tracked (e.g. training on the rocm backend).
         let batch_size = hidden.dims()[0];
         let device = hidden.device();
-        // convert() first: the backend's int repr may be I32 or I64.
-        let action_idx = action.into_data().convert::<i64>().to_vec::<i64>().unwrap();
-        let mut one_hot = vec![0f32; batch_size * action_size];
-        for (row, &a) in action_idx.iter().enumerate() {
-            one_hot[row * action_size + a as usize] = 1.0;
-        }
-        let action_one_hot = Tensor::<B, 1>::from_floats(one_hot.as_slice(), &device)
-            .reshape([batch_size, action_size]);
+        let action_one_hot = Tensor::<B, 2>::zeros([batch_size, action_size], &device).scatter(
+            1,
+            action.reshape([batch_size, 1]),
+            Tensor::<B, 2>::ones([batch_size, 1], &device),
+            IndexingUpdateOp::Add,
+        );
 
         let mut x = Tensor::cat(vec![hidden, action_one_hot], 1);
         for layer in &self.backbone {
@@ -91,13 +89,13 @@ impl DynamicModelConfig {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ndarray"))]
 mod tests {
-    use burn::backend::Wgpu;
+    use burn::backend::NdArray;
 
     use super::*;
 
-    type MyBackend = Wgpu<f32, i32>;
+    type MyBackend = NdArray<f32>;
 
     #[test]
     fn forward_shapes() {

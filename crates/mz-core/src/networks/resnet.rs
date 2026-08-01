@@ -9,7 +9,7 @@ use burn::{
     tensor::{Int, backend::Backend},
 };
 
-use crate::mz_config::MuZeroConfig;
+use crate::config::NetConfig;
 use crate::networks::MuZeroNets;
 use crate::networks::projector::{ConvProjection, ConvProjectionConfig};
 use crate::networks::resblock::{ResBlock, ResBlockConfig};
@@ -221,21 +221,21 @@ impl<B: Backend> ResNets<B> {
 }
 
 impl<B: Backend> MuZeroNets<B> for ResNets<B> {
-    fn init(mz_conf: &MuZeroConfig, device: &B::Device) -> Self {
-        let resnet = mz_conf.resnet();
+    fn init(net_conf: &NetConfig, device: &B::Device) -> Self {
+        let resnet = net_conf.resnet();
         ResNetConfig {
             obs_channels: resnet.obs_channels,
             channels: resnet.channels,
             n_blocks: resnet.n_blocks,
-            board_height: mz_conf.board_height,
-            board_width: mz_conf.board_width,
-            action_space: mz_conf.action_space,
+            board_height: net_conf.board_height,
+            board_width: net_conf.board_width,
+            action_space: net_conf.action_space,
             fc_hidden_size: resnet.fc_hidden_size,
-            value_support: mz_conf.support_len(),
-            reward_support: mz_conf.support_len(),
-            proj_hidden: mz_conf.projection.proj_hidden,
-            proj_out: mz_conf.projection.proj_out,
-            pred_hidden: mz_conf.projection.pred_hidden,
+            value_support: net_conf.support_len(),
+            reward_support: net_conf.support_len(),
+            proj_hidden: net_conf.projection.proj_hidden,
+            proj_out: net_conf.projection.proj_out,
+            pred_hidden: net_conf.projection.pred_hidden,
         }
         .init(device)
     }
@@ -271,16 +271,16 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ndarray"))]
 mod tests {
-    use burn::backend::Wgpu;
+    use burn::backend::NdArray;
     use burn::tensor::activation::softmax;
 
     use super::*;
     use crate::networks::MuZeroNets;
 
-    type MyBackend = Wgpu<f32, i32>;
-    type MyDevice = burn::backend::wgpu::WgpuDevice;
+    type MyBackend = NdArray<f32>;
+    type MyDevice = burn::backend::ndarray::NdArrayDevice;
 
     fn test_nets(device: &MyDevice) -> ResNets<MyBackend> {
         ResNetConfig {

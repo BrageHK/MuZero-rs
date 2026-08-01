@@ -33,6 +33,40 @@ export HSA_OVERRIDE_GFX_VERSION=11.0.0
 cargo run -r --bin train
 ```
 
+## Othello in the browser
+
+`crates/mz-web` compiles the inference half of the project (`crates/mz-core`) to
+wasm and plays Othello against you with a minimal Gumbel MuZero search. The
+trained weights are embedded in the wasm binary, so the site is fully static.
+
+```bash
+# 1. Export the checkpoint: writes crates/mz-web/assets/{othello.bin,net_config.rs}
+cargo run -r --bin export_web            # optional arg: checkpoint path without extension
+
+# 2. Build the wasm package
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+wasm-pack build crates/mz-web --target web --out-dir web/pkg
+
+# 3. Serve it (WebGPU needs localhost or https)
+python3 -m http.server -d crates/mz-web/web 8080
+```
+
+The default build runs on WebGPU. For browsers without it, or for a much smaller
+binary (1.5 MB instead of 8.5 MB) and faster batch-of-1 inference, build the
+pure-Rust SIMD CPU backend instead:
+
+```bash
+wasm-pack build crates/mz-web --target web --out-dir web/pkg \
+    --no-default-features --features flex
+```
+
+The wasm search is pinned to the training search by a parity test:
+
+```bash
+cargo test -p mz-web --no-default-features --features ndarray
+```
+
 # Result
 
 After running the parallel training for a few minutes on a M2 Pro mac, the agent learns to play CartPole perfectly.

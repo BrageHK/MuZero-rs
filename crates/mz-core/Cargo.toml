@@ -1,0 +1,23 @@
+[package]
+name = "mz-core"
+version.workspace = true
+edition.workspace = true
+
+# Inference-only core shared by mz-train (native training) and mz-web (wasm).
+# Must stay free of std::fs, rayon and any C dependency so it builds for
+# wasm32-unknown-unknown.
+[dependencies]
+burn = { workspace = true, features = ["std"] }
+serde = { workspace = true }
+
+[features]
+# Backends are opt-in; mz-train and mz-web each pick their own.
+default = []
+ndarray = ["burn/ndarray"]
+flex = ["burn/flex"]
+wgpu = ["burn/wgpu", "burn/fusion"]
+webgpu = ["burn/webgpu"]
+metal = ["burn/metal", "burn/fusion"]
+vulkan = ["burn/vulkan", "burn/fusion"]
+cuda = ["burn/cuda", "burn/fusion"]
+rocm = ["burn/rocm", "burn/fusion"]

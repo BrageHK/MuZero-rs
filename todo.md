@@ -11,7 +11,7 @@
         - [x] Estimate elo rating
 - [x] Gumbel search and iterative halving
 - [x] SimSam training for the dynamics model
-- [ ] WASM website for Othello
+- [x] WASM website for Othello
 - [ ] Chess support
 - [ ] WASM chess
 - [ ] Add support for ALE

@@ -52,13 +52,13 @@ impl RepresentationModelConfig {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ndarray"))]
 mod tests {
-    use burn::backend::Wgpu;
+    use burn::backend::NdArray;
 
     use super::*;
 
-    type MyBackend = Wgpu<f32, i32>;
+    type MyBackend = NdArray<f32>;
 
     #[test]
     fn forward_pass() {

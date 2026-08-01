@@ -4,7 +4,7 @@ use burn::{
     tensor::{Int, backend::Backend},
 };
 
-use crate::mz_config::MuZeroConfig;
+use crate::config::NetConfig;
 use crate::networks::MuZeroNets;
 use crate::networks::{
     dynamic::{DynamicModelConfig, DynamicModelMLP},
@@ -23,37 +23,37 @@ pub struct MlpNets<B: Backend> {
 }
 
 impl<B: Backend> MuZeroNets<B> for MlpNets<B> {
-    fn init(mz_conf: &MuZeroConfig, device: &B::Device) -> Self {
-        let linear = mz_conf.linear();
+    fn init(net_conf: &NetConfig, device: &B::Device) -> Self {
+        let linear = net_conf.linear();
         MlpNets {
             representation: RepresentationModelConfig {
                 hidden_size: linear.representation.latent_space_dims,
                 fc_hidden_size: linear.representation.fc_hidden_size,
-                input_size: mz_conf.obs_dim,
+                input_size: net_conf.obs_dim,
                 n_layers: linear.representation.n_layers,
             }
             .init::<B>(device),
             dynamic: DynamicModelConfig {
-                hidden_input: linear.dynamic.latent_space_dims + mz_conf.action_space,
+                hidden_input: linear.dynamic.latent_space_dims + net_conf.action_space,
                 fc_hidden_size: linear.dynamic.fc_hidden_size,
                 hidden_output: linear.dynamic.latent_space_dims,
                 n_layers: linear.dynamic.n_layers,
-                reward_support: mz_conf.support_len(),
+                reward_support: net_conf.support_len(),
             }
             .init::<B>(device),
             prediction: PredictionModelConfig {
                 fc_hidden_size: linear.prediction.fc_hidden_size,
                 hidden_size: linear.prediction.latent_space_dims,
-                action_space: mz_conf.action_space,
+                action_space: net_conf.action_space,
                 n_layers: linear.prediction.n_layers,
-                value_support: mz_conf.support_len(),
+                value_support: net_conf.support_len(),
             }
             .init::<B>(device),
             projection: MlpProjectionConfig {
                 latent_size: linear.dynamic.latent_space_dims,
-                proj_hidden: mz_conf.projection.proj_hidden,
-                proj_out: mz_conf.projection.proj_out,
-                pred_hidden: mz_conf.projection.pred_hidden,
+                proj_hidden: net_conf.projection.proj_hidden,
+                proj_out: net_conf.projection.proj_out,
+                pred_hidden: net_conf.projection.pred_hidden,
             }
             .init::<B>(device),
         }

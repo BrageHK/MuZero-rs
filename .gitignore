@@ -32,3 +32,4 @@ psudocode/*
 build/
 model/
 vendor/
+crates/mz-web/web/pkg/
