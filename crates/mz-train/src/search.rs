@@ -197,10 +197,16 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
             };
 
             if let SearchAlgorithm::Gumbel = algorithm {
-                let mut rng = rand::rng();
-                tree.gumbel = (0..action_space)
-                    .map(|_| gumbel_dist.sample(&mut rng))
-                    .collect();
+                // Gumbel perturbation is the algorithm's exploration; zeroing it
+                // makes the root deterministic for evaluation and reanalyze.
+                tree.gumbel = if add_exploration_noise {
+                    let mut rng = rand::rng();
+                    (0..action_space)
+                        .map(|_| gumbel_dist.sample(&mut rng))
+                        .collect()
+                } else {
+                    vec![0.0; action_space]
+                };
                 let num_legal =
                     mask.map_or(action_space, |m| m.iter().filter(|&&l| l).count());
                 tree.num_considered = num_legal.min(max_considered);

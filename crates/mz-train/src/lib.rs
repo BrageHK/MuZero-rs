@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod augment;
 pub mod env;
+pub mod eval;
 pub mod mz_config;
 pub mod networks;
 pub mod optim;

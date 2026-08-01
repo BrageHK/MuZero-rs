@@ -61,6 +61,131 @@ pub enum EnvironmentName {
     Atari,
 }
 
+/// One step of the benchmark-opponent ladder. `elo` is a hand-picked anchor: the
+/// absolute numbers are arbitrary, only movement between evals is meaningful.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "opponent", deny_unknown_fields)]
+pub enum RungConfig {
+    Random {
+        elo: f32,
+    },
+    AlphaBeta {
+        depth: usize,
+        #[serde(default)]
+        epsilon: f32,
+        elo: f32,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvalConfig {
+    /// Training steps between evals. 0 disables evaluation.
+    #[serde(default = "default_eval_interval")]
+    pub interval: usize,
+    #[serde(default = "default_eval_games")]
+    pub games: usize,
+    /// None = reuse the training `num_simulations`.
+    #[serde(default)]
+    pub num_simulations: Option<usize>,
+    #[serde(default = "default_random_opening_plies")]
+    pub random_opening_plies: usize,
+    #[serde(default = "default_promote_score")]
+    pub promote_score: f32,
+    #[serde(default = "default_demote_score")]
+    pub demote_score: f32,
+    /// Fixed so every eval replays the same opening book, which makes successive
+    /// readings a paired comparison instead of independent samples.
+    #[serde(default = "default_eval_seed")]
+    pub seed: u64,
+    /// None = the built-in ladder for the configured environment.
+    #[serde(default)]
+    pub ladder: Option<Vec<RungConfig>>,
+}
+
+impl Default for EvalConfig {
+    fn default() -> Self {
+        Self {
+            interval: default_eval_interval(),
+            games: default_eval_games(),
+            num_simulations: None,
+            random_opening_plies: default_random_opening_plies(),
+            promote_score: default_promote_score(),
+            demote_score: default_demote_score(),
+            seed: default_eval_seed(),
+            ladder: None,
+        }
+    }
+}
+
+fn default_eval_interval() -> usize {
+    500
+}
+
+fn default_eval_games() -> usize {
+    100
+}
+
+fn default_random_opening_plies() -> usize {
+    4
+}
+
+fn default_promote_score() -> f32 {
+    0.75
+}
+
+fn default_demote_score() -> f32 {
+    0.25
+}
+
+fn default_eval_seed() -> u64 {
+    0x5EED_0E10
+}
+
+/// Ladders for the environments that support evaluation. Other environments get
+/// an empty ladder, which disables it.
+pub fn default_ladder(environment: &EnvironmentName) -> Vec<RungConfig> {
+    match environment {
+        EnvironmentName::Othello => vec![
+            RungConfig::Random { elo: 0.0 },
+            RungConfig::AlphaBeta {
+                depth: 1,
+                epsilon: 0.05,
+                elo: 500.0,
+            },
+            RungConfig::AlphaBeta {
+                depth: 3,
+                epsilon: 0.02,
+                elo: 1000.0,
+            },
+            RungConfig::AlphaBeta {
+                depth: 5,
+                epsilon: 0.0,
+                elo: 1400.0,
+            },
+        ],
+        EnvironmentName::TicTacToe => vec![
+            RungConfig::Random { elo: 0.0 },
+            RungConfig::AlphaBeta {
+                depth: 1,
+                epsilon: 0.2,
+                elo: 300.0,
+            },
+            RungConfig::AlphaBeta {
+                depth: 3,
+                epsilon: 0.1,
+                elo: 600.0,
+            },
+            RungConfig::AlphaBeta {
+                depth: 9,
+                epsilon: 0.0,
+                elo: 900.0,
+            },
+        ],
+        EnvironmentName::CartPole | EnvironmentName::Atari => Vec::new(),
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TemperatureSchedule {
     pub step: Option<usize>,
@@ -157,6 +282,9 @@ pub struct MuZeroConfig {
     pub puct: Option<PuctSubConfig>,
     #[serde(default)]
     pub gumbel: Option<GumbelSubConfig>,
+
+    #[serde(default)]
+    pub eval: Option<EvalConfig>,
 
     pub training_steps: usize,
     pub train_ratio: f32,
@@ -331,6 +459,35 @@ fn validate(conf: &MuZeroConfig) {
             gumbel.c_visit
         );
     }
+    if let Some(eval) = conf.eval.as_ref() {
+        assert!(eval.games >= 2, "eval.games must be >= 2, got {}", eval.games);
+        assert!(
+            (0.0..=1.0).contains(&eval.promote_score) && (0.0..=1.0).contains(&eval.demote_score),
+            "eval promote/demote scores must be in [0, 1]"
+        );
+        assert!(
+            eval.promote_score > eval.demote_score,
+            "eval.promote_score ({}) must exceed eval.demote_score ({})",
+            eval.promote_score,
+            eval.demote_score
+        );
+        if let Some(ladder) = eval.ladder.as_ref() {
+            assert!(
+                !default_ladder(&conf.environment).is_empty(),
+                "eval.ladder is only supported for board games (TicTacToe, Othello)"
+            );
+            assert!(!ladder.is_empty(), "eval.ladder must have at least one rung");
+            for rung in ladder {
+                if let RungConfig::AlphaBeta { depth, epsilon, .. } = rung {
+                    assert!(*depth >= 1, "eval ladder depth must be >= 1, got {depth}");
+                    assert!(
+                        (0.0..=1.0).contains(epsilon),
+                        "eval ladder epsilon must be in [0, 1], got {epsilon}"
+                    );
+                }
+            }
+        }
+    }
 }
 
 fn get_conf(file_content: String) -> MuZeroConfig {
@@ -388,6 +545,10 @@ impl MuZeroConfig {
         self.gumbel
             .as_ref()
             .expect("search_algorithm: Gumbel requires a `gumbel:` section in the config")
+    }
+
+    pub fn eval(&self) -> EvalConfig {
+        self.eval.clone().unwrap_or_default()
     }
 
     pub fn support_len(&self) -> usize {

@@ -21,7 +21,7 @@ use crate::env::{EnvInfo, Environment};
 const BOARD_MASK: u16 = 0x1FF;
 
 /// The 8 winning lines as bitmasks (3 rows, 3 columns, 2 diagonals).
-const LINES: [u16; 8] = [
+pub(crate) const LINES: [u16; 8] = [
     0b000_000_111,
     0b000_111_000,
     0b111_000_000,

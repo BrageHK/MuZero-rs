@@ -1,14 +1,14 @@
 - [x] Save replay buffer
 - [x] total steps -> training steps instead
-- [ ] Better training tracking:
+- [x] Better training tracking:
     - [x] tau
     - [x] loss
-    - [ ] reward (only in single player)
+    - [x] reward (only in single player)
     - [x] game length 
-    - [ ] number of replay buffer states
-    - [ ] Add proper evaluation of board games: 
-        - [ ] Eval against a strong opponent: alpha-beta pruning w/ heuristics in othello, alpha-beta pruning with some randomness in tic-tac-toe
-        - [ ] Estimate elo rating
+    - [x] number of replay buffer states
+    - [x] Add proper evaluation of board games: 
+        - [x] Eval against a strong opponent: alpha-beta pruning w/ heuristics in othello, alpha-beta pruning with some randomness in tic-tac-toe
+        - [x] Estimate elo rating
 - [x] Gumbel search and iterative halving
 - [x] SimSam training for the dynamics model
 - [ ] WASM website for Othello

@@ -16,7 +16,8 @@ use burn::train::renderer::{
     tui::TuiMetricsRendererWrapper,
 };
 
-use crate::mz_config::MuZeroConfig;
+use crate::eval::EvalReading;
+use crate::mz_config::{MuZeroConfig, SearchAlgorithm};
 
 pub struct TrainingTui {
     renderer: TuiMetricsRendererWrapper,
@@ -24,14 +25,20 @@ pub struct TrainingTui {
     total_steps: usize,
     avg_window: usize,
     rate_window: Duration,
-    best_id: MetricId,
-    avg_id: MetricId,
-    sps_id: MetricId,
-    tau_id: MetricId,
-    loss_id: MetricId,
-    consistency_id: MetricId,
-    len_id: MetricId,
-    buf_id: MetricId,
+    best_id: Option<MetricId>,
+    avg_id: Option<MetricId>,
+    elo_id: Option<MetricId>,
+    eval_score_id: Option<MetricId>,
+    win_id: Option<MetricId>,
+    draw_id: Option<MetricId>,
+    loss_pct_id: Option<MetricId>,
+    opponent_id: Option<MetricId>,
+    sps_id: Option<MetricId>,
+    tau_id: Option<MetricId>,
+    loss_id: Option<MetricId>,
+    consistency_id: Option<MetricId>,
+    len_id: Option<MetricId>,
+    buf_id: Option<MetricId>,
     best_reward: f32,
     recent_rewards: VecDeque<f32>,
     recent_lengths: VecDeque<usize>,
@@ -47,27 +54,60 @@ impl TrainingTui {
         let interrupter = Interrupter::new();
         let mut renderer = TuiMetricsRendererWrapper::new(interrupter.clone(), None);
 
-        let mut register = |name: &str| {
+        let mut register = |name: &str, attributes: MetricAttributes| {
             let id = MetricId::new(Arc::new(name.to_string()));
             renderer.register_metric(MetricDefinition {
                 metric_id: id.clone(),
                 name: name.to_string(),
                 description: None,
-                attributes: MetricAttributes::Numeric(NumericAttributes {
-                    unit: None,
-                    higher_is_better: true,
-                }),
+                attributes,
             });
-            id
+            Some(id)
         };
-        let best_id = register("Best Game Reward");
-        let avg_id = register("Avg Game Reward");
-        let sps_id = register("Env Steps / sec");
-        let tau_id = register("Tau");
-        let loss_id = register("Loss");
-        let consistency_id = register("Consistency Loss");
-        let len_id = register("Avg Game Length");
-        let buf_id = register("Buffer States");
+        let mut numeric = |name: &str, higher_is_better: bool| {
+            register(
+                name,
+                MetricAttributes::Numeric(NumericAttributes {
+                    unit: None,
+                    higher_is_better,
+                }),
+            )
+        };
+
+        // Board games are scored by Elo against benchmark opponents; episode
+        // reward is ~0 on average no matter how strong the agent is.
+        let board_game = mz_conf.is_twoplayer;
+        let (best_id, avg_id) = match board_game {
+            true => (None, None),
+            false => (
+                numeric("Best Game Reward", true),
+                numeric("Avg Game Reward", true),
+            ),
+        };
+        let (elo_id, eval_score_id, win_id, draw_id, loss_pct_id) = match board_game {
+            true => (
+                numeric("Elo", true),
+                numeric("Eval Score", true),
+                numeric("Win %", true),
+                numeric("Draw %", true),
+                numeric("Loss %", false),
+            ),
+            false => (None, None, None, None, None),
+        };
+        let sps_id = numeric("Env Steps / sec", true);
+        // Gumbel picks the root action deterministically, so tau is meaningless there.
+        let tau_id = match mz_conf.search_algorithm {
+            SearchAlgorithm::Puct => numeric("Tau", true),
+            SearchAlgorithm::Gumbel => None,
+        };
+        let loss_id = numeric("Loss", false);
+        let consistency_id = numeric("Consistency Loss", false);
+        let len_id = numeric("Avg Game Length", true);
+        let buf_id = numeric("Buffer States", true);
+        let opponent_id = match board_game {
+            true => register("Eval Opponent", MetricAttributes::None),
+            false => None,
+        };
 
         Self {
             renderer,
@@ -77,6 +117,12 @@ impl TrainingTui {
             rate_window: Duration::from_secs_f32(mz_conf.rate_window_secs),
             best_id,
             avg_id,
+            elo_id,
+            eval_score_id,
+            win_id,
+            draw_id,
+            loss_pct_id,
+            opponent_id,
             sps_id,
             tau_id,
             loss_id,
@@ -91,6 +137,21 @@ impl TrainingTui {
             env_steps: 0,
             train_steps: 0,
             buffer_states: 0,
+        }
+    }
+
+    fn set(renderer: &mut TuiMetricsRendererWrapper, id: &Option<MetricId>, value: f64) {
+        if let Some(id) = id {
+            renderer.update_train(numeric_state(id, value));
+        }
+    }
+
+    fn set_text(renderer: &mut TuiMetricsRendererWrapper, id: &Option<MetricId>, value: &str) {
+        if let Some(id) = id {
+            renderer.update_train(MetricState::Generic(MetricEntry::new(
+                id.clone(),
+                SerializedEntry::new(value.to_string(), value.to_string()),
+            )));
         }
     }
 
@@ -114,33 +175,41 @@ impl TrainingTui {
             / self.recent_rewards.len() as f64;
         let avg_len = self.recent_lengths.iter().map(|&l| l as f64).sum::<f64>()
             / self.recent_lengths.len() as f64;
-        let best = numeric_state(&self.best_id, self.best_reward as f64);
-        let avg = numeric_state(&self.avg_id, avg);
-        let avg_len = numeric_state(&self.len_id, avg_len);
-        self.renderer.update_train(best);
-        self.renderer.update_train(avg);
-        self.renderer.update_train(avg_len);
+        let best_reward = self.best_reward as f64;
+        Self::set(&mut self.renderer, &self.best_id, best_reward);
+        Self::set(&mut self.renderer, &self.avg_id, avg);
+        Self::set(&mut self.renderer, &self.len_id, avg_len);
+    }
+
+    pub fn set_eval(&mut self, reading: &EvalReading) {
+        let games = reading.result.games().max(1) as f64;
+        Self::set(&mut self.renderer, &self.elo_id, reading.elo as f64);
+        Self::set(&mut self.renderer, &self.eval_score_id, reading.result.score() as f64);
+        Self::set(&mut self.renderer, &self.win_id, 100.0 * reading.result.wins as f64 / games);
+        Self::set(&mut self.renderer, &self.draw_id, 100.0 * reading.result.draws as f64 / games);
+        Self::set(
+            &mut self.renderer,
+            &self.loss_pct_id,
+            100.0 * reading.result.losses as f64 / games,
+        );
+        Self::set_text(&mut self.renderer, &self.opponent_id, &reading.opponent);
     }
 
     pub fn set_tau(&mut self, tau: f32) {
-        self.renderer
-            .update_train(numeric_state(&self.tau_id, tau as f64));
+        Self::set(&mut self.renderer, &self.tau_id, tau as f64);
     }
 
     pub fn set_loss(&mut self, loss: f32) {
-        self.renderer
-            .update_train(numeric_state(&self.loss_id, loss as f64));
+        Self::set(&mut self.renderer, &self.loss_id, loss as f64);
     }
 
     pub fn set_consistency_loss(&mut self, loss: f32) {
-        self.renderer
-            .update_train(numeric_state(&self.consistency_id, loss as f64));
+        Self::set(&mut self.renderer, &self.consistency_id, loss as f64);
     }
 
     pub fn set_buffer_states(&mut self, n: usize) {
         self.buffer_states = n;
-        self.renderer
-            .update_train(numeric_state(&self.buf_id, n as f64));
+        Self::set(&mut self.renderer, &self.buf_id, n as f64);
     }
 
     pub fn add_env_steps(&mut self, n: usize, backprop_active: bool) {
@@ -163,8 +232,7 @@ impl TrainingTui {
         let elapsed = now.duration_since(first_t).as_secs_f64();
         if elapsed > 0.0 {
             let rate = (self.env_steps - first_steps) as f64 / elapsed;
-            let sps = numeric_state(&self.sps_id, rate);
-            self.renderer.update_train(sps);
+            Self::set(&mut self.renderer, &self.sps_id, rate);
         }
     }
 

@@ -13,6 +13,7 @@ use mz_rs::mz_config::{MuZeroConfig, SearchAlgorithm};
 use mz_rs::networks::nets_to_backend;
 use mz_rs::optim::AnyOptimizer;
 use mz_rs::replay_buffer::{BufferData, ReplayBuffer};
+use mz_rs::eval::EloLadder;
 use mz_rs::search::batched_search;
 use mz_rs::train::train;
 use mz_rs::tui_metrics::TrainingTui;
@@ -49,6 +50,7 @@ fn main() {
     let mut buffer = ReplayBuffer::new(&mz_conf);
     let mut augmenter = Augmenter::from_config(&mz_conf);
     let mut tui = TrainingTui::new(&mz_conf);
+    let mut ladder = EloLadder::new(&mz_conf);
 
     let training_steps_per_iteration = ((mz_conf.game_batch_size as f32
         / mz_conf.training_batch_size as f32
@@ -134,6 +136,13 @@ fn main() {
                     .expect("Failed to save optimizer state");
                 next_checkpoint += mz_conf.checkpoint_interval;
                 save_buffer(&buffer, &format!("{path}/buffer.mpk"));
+            }
+
+            // Evaluate against the benchmark opponent ladder
+            if ladder.due(training_step) {
+                let reading =
+                    ladder.run(&mz_conf, &inference_agent, &infer_device, training_step);
+                tui.set_eval(&reading);
             }
 
             // Reanalyze

@@ -1,7 +1,7 @@
 # Network
 
-network_type: Linear # Linear, ResNet
-environment: CartPole # CartPole, TicTacToe, Othello, Atari
+network_type: ResNet # Linear, ResNet
+environment: Othello # CartPole, TicTacToe, Othello, Atari
 
 # Only used when environment: Atari. Any variant of the ale::BundledRom enum
 # (e.g. Breakout, Pong, SpaceInvaders, MsPacman, Seaquest). Obs is a 1x84x84
@@ -26,7 +26,7 @@ linear:
 
 # Only relevant when choosing ResNet above
 resnet:
-    obs_channels: 1
+    obs_channels: 3
     channels: 32
     n_blocks: 4
     fc_hidden_size: 64
@@ -41,16 +41,16 @@ projection:
 # Compute backends. Must be compiled in via cargo features (see crates/mz-train/Cargo.toml).
 # Options: auto, cuda, rocm, metal, vulkan, wgpu, flex, ndarray, libtorch, libtorch-gpu
 # auto = best compiled-in backend (cuda > metal > rocm > vulkan > wgpu > libtorch > flex > ndarray)
-training_backend: ndarray # wgpu
-inference_backend: ndarray # ndarray
+training_backend: metal # wgpu
+inference_backend: metal # ndarray
 
 # Training + algorithm
-n_steps: 30
+n_steps: 5
 unroll_steps: 5
 
 # Batch sizes
-training_batch_size: 2048
-game_batch_size: 2048
+training_batch_size: 512
+game_batch_size: 512
 
 # Optimizer
 optimizer: Sgd # AdamW, Adam, Sgd
@@ -61,7 +61,7 @@ weight_decay: 1e-4
 momentum: 0.9
 # Linear LR ramp over the first N training steps. EfficientZero warms up over 1%
 # of total steps. 0 disables.
-lr_warmup_steps: 0
+lr_warmup_steps: 100
 
 # Loss weights. EfficientZero: value 0.25, policy 1, reward 1, consistency 2
 # (5 on Atari). consistency_coef: 0.0 disables the SimSiam consistency term.
@@ -75,7 +75,7 @@ consistency_coef: 2.0
 augmentation: false
 
 train_ratio: 2
-num_simulations: 4
+num_simulations: 16
 
 # Search
 # Puct: MuZero PUCT + Dirichlet root noise + visit-count policy targets.
@@ -100,9 +100,28 @@ puct:
 
 # Only relevant when search_algorithm: Gumbel
 gumbel:
-    max_num_considered_actions: 16 # top-m root actions entering Sequential Halving
+    max_num_considered_actions: 8 # top-m root actions entering Sequential Halving
     c_visit: 50.0
     c_scale: 0.1
+
+# Board-game evaluation (TicTacToe, Othello). The agent plays a batch of games
+# against a benchmark opponent and the score is turned into a rough Elo. Anchor
+# values are arbitrary; only movement between evals is meaningful. Ignored for
+# single-player envs. Omit the whole block to use these defaults.
+eval:
+    interval: 500 # training steps between evals; 0 disables
+    games: 512 # split evenly between playing first and second
+    num_simulations: 50 # null = same as training
+    random_opening_plies: 4 # random plies before the agents take over
+    promote_score: 0.80 # score at which the agent moves up a rung
+    demote_score: 0.20 # score at which it drops back down
+    seed: 1592426000 # fixed, so every eval replays the same opening book
+    # null = the built-in ladder for the chosen environment:
+    #   Othello:   Random(0) -> AB d1 e.05 (500) -> AB d3 e.02 (1000) -> AB d5 (1400)
+    #   TicTacToe: Random(0) -> AB d1 e.2  (300) -> AB d3 e.1  (600)  -> AB d9 (900)
+    # `epsilon` is the chance of playing a random legal move instead of the
+    # alpha-beta pick, which keeps the weaker rungs beatable and games varied.
+    ladder: null
 
 # Categorical value/reward support. Heads predict a distribution over
 # 2*support_size+1 bins under the invertible scaling transform (paper App. F).
