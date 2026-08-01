@@ -9,8 +9,8 @@
     - [ ] Add proper evaluation of board games: 
         - [ ] Eval against a strong opponent: alpha-beta pruning w/ heuristics in othello, alpha-beta pruning with some randomness in tic-tac-toe
         - [ ] Estimate elo rating
-- [ ] Gumbel search and iterative halving
-- [ ] SimSam training for the dynamics model
+- [x] Gumbel search and iterative halving
+- [x] SimSam training for the dynamics model
 - [ ] WASM website for Othello
 - [ ] Chess support
 - [ ] WASM chess

@@ -16,6 +16,8 @@ pub struct BufferData {
     pub is_terminal: bool,
     pub created_step: usize,
     pub legal_mask: Vec<bool>,
+    #[serde(default)]
+    pub is_absorbing: bool,
 }
 
 pub struct ReplayBuffer {
@@ -105,6 +107,7 @@ impl ReplayBuffer {
                     value: 0.0,
                     reward: 0.0,
                     policy: uniform_policy.clone(),
+                    is_absorbing: true,
                     ..sequence.last().expect("sequence has at least one state").clone()
                 };
                 sequence.push(BufferData {
@@ -128,6 +131,7 @@ impl ReplayBuffer {
                     value: 0.0,
                     reward: 0.0,
                     policy: uniform_policy.clone(),
+                    is_absorbing: true,
                     ..state.clone()
                 });
             }
@@ -184,6 +188,7 @@ mod tests {
                 is_terminal: i == n - 1,
                 created_step: 0,
                 legal_mask: vec![true; 4],
+                is_absorbing: false,
             })
             .collect()
     }
@@ -257,6 +262,45 @@ mod tests {
             let sample = buffer.sample_games(&mz_config);
             assert_eq!(sample[0][i].value, 0.);
             assert_eq!(sample[0][i].reward, 0.);
+        }
+    }
+
+    #[test]
+    fn absorbing_flag_marks_padded_tail() {
+        let mz_config = MuZeroConfig {
+            training_batch_size: 1,
+            is_twoplayer: false,
+            ..Default::default()
+        };
+        let mut buffer = ReplayBuffer::default();
+        buffer.store_game(create_game(1), &mz_config);
+
+        let sample = buffer.sample_games(&mz_config);
+        let steps = &sample[0];
+        assert!(!steps[0].is_absorbing);
+        for (i, step) in steps.iter().enumerate().skip(1) {
+            assert!(step.is_absorbing, "step {i} should be absorbing");
+        }
+    }
+
+    #[test]
+    fn absorbing_flag_unset_inside_a_game() {
+        let mz_config = MuZeroConfig {
+            training_batch_size: 1,
+            is_twoplayer: false,
+            ..Default::default()
+        };
+        let mut buffer = ReplayBuffer::default();
+        buffer.store_game(create_game(100), &mz_config);
+
+        for _ in 0..8 {
+            let sample = buffer.sample_games(&mz_config);
+            let first_absorbing = sample[0].iter().position(|s| s.is_absorbing);
+            if let Some(idx) = first_absorbing {
+                assert!(idx >= 1, "step 0 is always a real transition");
+                assert!(sample[0][idx - 1].is_terminal);
+                assert!(sample[0][idx..].iter().all(|s| s.is_absorbing));
+            }
         }
     }
 }

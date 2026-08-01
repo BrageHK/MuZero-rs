@@ -31,6 +31,13 @@ resnet:
     n_blocks: 4
     fc_hidden_size: 64
 
+# SimSiam projector (P1) / predictor (P2) for the EfficientZero consistency loss.
+# For ResNet the projector reduces channels and pools to 6x6 before these sizes apply.
+projection:
+    proj_hidden: 256
+    proj_out: 64
+    pred_hidden: 128
+
 # Compute backends. Must be compiled in via cargo features (see crates/mz-train/Cargo.toml).
 # Options: auto, cuda, rocm, metal, vulkan, wgpu, flex, ndarray, libtorch, libtorch-gpu
 # auto = best compiled-in backend (cuda > metal > rocm > vulkan > wgpu > libtorch > flex > ndarray)
@@ -52,6 +59,20 @@ learning_rate: 0.02
 grad_clip: 1.0
 weight_decay: 1e-4
 momentum: 0.9
+# Linear LR ramp over the first N training steps. EfficientZero warms up over 1%
+# of total steps. 0 disables.
+lr_warmup_steps: 0
+
+# Loss weights. EfficientZero: value 0.25, policy 1, reward 1, consistency 2
+# (5 on Atari). consistency_coef: 0.0 disables the SimSiam consistency term.
+value_coef: 0.25
+policy_coef: 1.0
+reward_coef: 1.0
+consistency_coef: 2.0
+
+# Random shift (replication pad 4) + intensity jitter on observations. Image obs
+# only; ignored for 1D envs like CartPole.
+augmentation: false
 
 train_ratio: 2
 num_simulations: 4

@@ -16,7 +16,8 @@ use mz_rs::replay_buffer::{BufferData, ReplayBuffer};
 use mz_rs::search::batched_search;
 use mz_rs::train::train;
 use mz_rs::tui_metrics::TrainingTui;
-use mz_rs::utils::{save_buffer, select_device, tau_for_step};
+use mz_rs::augment::Augmenter;
+use mz_rs::utils::{lr_for_step, save_buffer, select_device, tau_for_step};
 use mz_rs::with_env;
 
 use rand_distr::Distribution;
@@ -46,6 +47,7 @@ fn main() {
         nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
 
     let mut buffer = ReplayBuffer::new(&mz_conf);
+    let mut augmenter = Augmenter::from_config(&mz_conf);
     let mut tui = TrainingTui::new(&mz_conf);
 
     let training_steps_per_iteration = ((mz_conf.game_batch_size as f32
@@ -105,6 +107,7 @@ fn main() {
                     is_terminal: result.done || result.truncated,
                     created_step: training_step,
                     legal_mask,
+                    is_absorbing: false,
                 });
 
                 game_reward_batch[i] += result.reward as f32;
@@ -138,20 +141,22 @@ fn main() {
 
             // Train
             for _train_step in 0..training_steps_per_iteration {
-                let loss;
-                (agent, loss) = train(
+                let metrics;
+                (agent, metrics) = train(
                     agent,
                     &mut optimizer,
                     &mz_conf,
                     &mut buffer,
-                    mz_conf.learning_rate,
+                    augmenter.as_mut(),
+                    lr_for_step(mz_conf.learning_rate, mz_conf.lr_warmup_steps, training_step),
                     &train_device,
                 );
-                if let Some(loss) = loss {
-                    tui.set_loss(loss);
+                if let Some(metrics) = metrics {
+                    tui.set_loss(metrics.total);
+                    tui.set_consistency_loss(metrics.consistency);
                 }
 
-                if loss.is_some() {
+                if metrics.is_some() {
                     training_step += 1;
                     // Update inference agent every n training steps
                     if (training_step + 1) % mz_conf.inference_update_interval.max(1) == 0 {

@@ -29,6 +29,7 @@ pub struct TrainingTui {
     sps_id: MetricId,
     tau_id: MetricId,
     loss_id: MetricId,
+    consistency_id: MetricId,
     len_id: MetricId,
     buf_id: MetricId,
     best_reward: f32,
@@ -64,6 +65,7 @@ impl TrainingTui {
         let sps_id = register("Env Steps / sec");
         let tau_id = register("Tau");
         let loss_id = register("Loss");
+        let consistency_id = register("Consistency Loss");
         let len_id = register("Avg Game Length");
         let buf_id = register("Buffer States");
 
@@ -78,6 +80,7 @@ impl TrainingTui {
             sps_id,
             tau_id,
             loss_id,
+            consistency_id,
             len_id,
             buf_id,
             best_reward: f32::NEG_INFINITY,
@@ -127,6 +130,11 @@ impl TrainingTui {
     pub fn set_loss(&mut self, loss: f32) {
         self.renderer
             .update_train(numeric_state(&self.loss_id, loss as f64));
+    }
+
+    pub fn set_consistency_loss(&mut self, loss: f32) {
+        self.renderer
+            .update_train(numeric_state(&self.consistency_id, loss as f64));
     }
 
     pub fn set_buffer_states(&mut self, n: usize) {

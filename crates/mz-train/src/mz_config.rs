@@ -89,6 +89,23 @@ pub struct ResNetSubConfig {
     pub fc_hidden_size: usize,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ProjectionSubConfig {
+    pub proj_hidden: usize,
+    pub proj_out: usize,
+    pub pred_hidden: usize,
+}
+
+impl Default for ProjectionSubConfig {
+    fn default() -> Self {
+        ProjectionSubConfig {
+            proj_hidden: 256,
+            proj_out: 64,
+            pred_hidden: 128,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct MuZeroConfig {
@@ -116,6 +133,23 @@ pub struct MuZeroConfig {
     pub num_simulations: usize,
     #[serde(default = "default_support_size")]
     pub support_size: usize,
+
+    #[serde(default = "default_value_coef")]
+    pub value_coef: f32,
+    #[serde(default = "default_unit_coef")]
+    pub policy_coef: f32,
+    #[serde(default = "default_unit_coef")]
+    pub reward_coef: f32,
+    #[serde(default = "default_consistency_coef")]
+    pub consistency_coef: f32,
+    #[serde(default)]
+    pub projection: ProjectionSubConfig,
+
+    #[serde(default)]
+    pub augmentation: bool,
+
+    #[serde(default)]
+    pub lr_warmup_steps: usize,
 
     #[serde(default)]
     pub search_algorithm: SearchAlgorithm,
@@ -184,6 +218,18 @@ fn default_support_size() -> usize {
     50
 }
 
+fn default_value_coef() -> f32 {
+    0.25
+}
+
+fn default_unit_coef() -> f32 {
+    1.0
+}
+
+fn default_consistency_coef() -> f32 {
+    2.0
+}
+
 impl Default for MuZeroConfig {
     fn default() -> Self {
         let file_content = fs::read_to_string("configs/config.yaml")
@@ -228,6 +274,22 @@ fn validate(conf: &MuZeroConfig) {
     assert!(conf.n_steps >= 1, "n_steps must be >= 1");
     assert!(conf.buffer_size >= 1, "buffer_size must be >= 1");
     assert!(conf.support_size >= 1, "support_size must be >= 1");
+    for (name, coef) in [
+        ("value_coef", conf.value_coef),
+        ("policy_coef", conf.policy_coef),
+        ("reward_coef", conf.reward_coef),
+        ("consistency_coef", conf.consistency_coef),
+    ] {
+        assert!(coef >= 0.0, "{name} must be >= 0, got {coef}");
+    }
+    if conf.consistency_coef > 0.0 {
+        assert!(
+            conf.projection.proj_hidden >= 1
+                && conf.projection.proj_out >= 1
+                && conf.projection.pred_hidden >= 1,
+            "projection sizes must be >= 1"
+        );
+    }
     if let SearchAlgorithm::Puct = conf.search_algorithm {
         let puct = conf
             .puct

@@ -1,5 +1,6 @@
 pub mod dynamic;
 pub mod prediction;
+pub mod projector;
 pub mod representation;
 pub mod resblock;
 pub mod resnet;
@@ -41,6 +42,10 @@ pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
 
     /// Returns (value_logits, policy_logits)
     fn predict(&self, hidden: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>);
+
+    fn project(&self, hidden: Tensor<B, 2>) -> Tensor<B, 2>;
+
+    fn predict_projection(&self, projection: Tensor<B, 2>) -> Tensor<B, 2>;
 
     /// returns (hidden_state, reward_logits, value_logits, policy_logits). reward is a
     /// zero distribution at the root (softmax of zeros decodes to scalar 0).

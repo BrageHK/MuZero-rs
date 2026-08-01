@@ -91,6 +91,7 @@ fn run_loop(mz_conf: &MuZeroConfig, iterations: usize) -> (Vec<f32>, Vec<usize>)
                 is_terminal: step.done || step.truncated,
                 created_step: 0,
                 legal_mask: legal_masks[i].clone(),
+                is_absorbing: false,
             });
 
             if step.done || step.truncated {
@@ -100,16 +101,18 @@ fn run_loop(mz_conf: &MuZeroConfig, iterations: usize) -> (Vec<f32>, Vec<usize>)
             }
         }
 
-        let loss;
-        (agent, loss) = train(
+        let metrics;
+        (agent, metrics) = train(
             agent,
             &mut optimizer,
             mz_conf,
             &mut buffer,
+            None,
             mz_conf.learning_rate,
             &device,
         );
-        if let Some(loss) = loss {
+        if let Some(metrics) = metrics {
+            let loss = metrics.total;
             assert!(loss.is_finite(), "loss {loss} not finite");
             losses.push(loss);
             inference_agent = nets_to_backend(&agent.valid(), mz_conf, &device);

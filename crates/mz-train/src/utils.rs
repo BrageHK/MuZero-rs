@@ -84,6 +84,13 @@ pub fn tau_for_step(schedule: &[TemperatureSchedule], step: usize) -> f32 {
     schedule.last().map(|e| e.tau).unwrap_or(1.0)
 }
 
+pub fn lr_for_step(base_lr: f64, warmup_steps: usize, step: usize) -> f64 {
+    if warmup_steps == 0 || step >= warmup_steps {
+        return base_lr;
+    }
+    base_lr * (step + 1) as f64 / warmup_steps as f64
+}
+
 pub struct QNormalization {
     q_max: f32,
     q_min: f32,
@@ -123,4 +130,17 @@ impl Default for QNormalization {
 pub fn save_buffer(buffer: &ReplayBuffer, path: &str) {
     let bytes = rmp_serde::to_vec(&buffer.states).expect("Failed to serialize replay buffer");
     std::fs::write(path, bytes).expect("Failed to write replay buffer");
+}
+
+#[cfg(test)]
+mod lr_tests {
+    use super::lr_for_step;
+
+    #[test]
+    fn warmup_ramps_then_holds() {
+        assert_eq!(lr_for_step(0.2, 0, 0), 0.2);
+        assert_eq!(lr_for_step(0.2, 4, 0), 0.05);
+        assert_eq!(lr_for_step(0.2, 4, 3), 0.2);
+        assert_eq!(lr_for_step(0.2, 4, 99), 0.2);
+    }
 }

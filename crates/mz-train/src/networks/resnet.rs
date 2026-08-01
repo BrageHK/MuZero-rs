@@ -11,6 +11,7 @@ use burn::{
 
 use crate::mz_config::MuZeroConfig;
 use crate::networks::MuZeroNets;
+use crate::networks::projector::{ConvProjection, ConvProjectionConfig};
 use crate::networks::resblock::{ResBlock, ResBlockConfig};
 
 #[derive(Config, Debug)]
@@ -24,6 +25,9 @@ pub struct ResNetConfig {
     pub fc_hidden_size: usize,
     pub value_support: usize,
     pub reward_support: usize,
+    pub proj_hidden: usize,
+    pub proj_out: usize,
+    pub pred_hidden: usize,
 }
 
 fn conv3x3<B: Backend>(c_in: usize, c_out: usize, device: &B::Device) -> Conv2d<B> {
@@ -143,6 +147,7 @@ pub struct ResNets<B: Backend> {
     pub representation: ResNetRepresentation<B>,
     pub dynamics: ResNetDynamics<B>,
     pub prediction: ResNetPrediction<B>,
+    pub projection: ConvProjection<B>,
     channels: usize,
     obs_channels: usize,
     board_height: usize,
@@ -186,6 +191,15 @@ impl ResNetConfig {
                 value_fc2: LinearConfig::new(self.fc_hidden_size, self.value_support).init(device),
                 relu: Relu,
             },
+            projection: ConvProjectionConfig {
+                channels: c,
+                board_height: h,
+                board_width: w,
+                proj_hidden: self.proj_hidden,
+                proj_out: self.proj_out,
+                pred_hidden: self.pred_hidden,
+            }
+            .init(device),
             channels: c,
             obs_channels: self.obs_channels,
             board_height: h,
@@ -219,6 +233,9 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
             fc_hidden_size: resnet.fc_hidden_size,
             value_support: mz_conf.support_len(),
             reward_support: mz_conf.support_len(),
+            proj_hidden: mz_conf.projection.proj_hidden,
+            proj_out: mz_conf.projection.proj_out,
+            pred_hidden: mz_conf.projection.pred_hidden,
         }
         .init(device)
     }
@@ -242,6 +259,15 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
     fn predict(&self, hidden: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         let hidden = self.unflatten(hidden, self.channels);
         self.prediction.forward(hidden)
+    }
+
+    fn project(&self, hidden: Tensor<B, 2>) -> Tensor<B, 2> {
+        let hidden = self.unflatten(hidden, self.channels);
+        self.projection.project(hidden)
+    }
+
+    fn predict_projection(&self, projection: Tensor<B, 2>) -> Tensor<B, 2> {
+        self.projection.predict(projection)
     }
 }
 
@@ -267,6 +293,9 @@ mod tests {
             fc_hidden_size: 16,
             value_support: 7,
             reward_support: 7,
+            proj_hidden: 32,
+            proj_out: 16,
+            pred_hidden: 16,
         }
         .init(device)
     }
@@ -289,6 +318,23 @@ mod tests {
         let (value, policy) = nets.predict(hidden);
         assert_eq!(value.dims(), [2, 7]);
         assert_eq!(policy.dims(), [2, 5]);
+    }
+
+    #[test]
+    fn projection_accepts_flat_hidden() {
+        let device = Default::default();
+        let nets = test_nets(&device);
+
+        let obs = Tensor::<MyBackend, 2>::random(
+            [4, 3 * 4 * 4],
+            burn::tensor::Distribution::Uniform(0.0, 1.0),
+            &device,
+        );
+        let hidden = nets.represent(obs);
+
+        let projection = nets.project(hidden);
+        assert_eq!(projection.dims(), [4, 16]);
+        assert_eq!(nets.predict_projection(projection).dims(), [4, 16]);
     }
 
     #[test]

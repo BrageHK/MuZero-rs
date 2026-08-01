@@ -9,6 +9,7 @@ use crate::networks::MuZeroNets;
 use crate::networks::{
     dynamic::{DynamicModelConfig, DynamicModelMLP},
     prediction::{PredictionModel, PredictionModelConfig},
+    projector::{MlpProjection, MlpProjectionConfig},
     representation::{RepresentationModel, RepresentationModelConfig},
 };
 
@@ -18,6 +19,7 @@ pub struct MlpNets<B: Backend> {
     pub representation: RepresentationModel<B>,
     pub dynamic: DynamicModelMLP<B>,
     pub prediction: PredictionModel<B>,
+    pub projection: MlpProjection<B>,
 }
 
 impl<B: Backend> MuZeroNets<B> for MlpNets<B> {
@@ -47,6 +49,13 @@ impl<B: Backend> MuZeroNets<B> for MlpNets<B> {
                 value_support: mz_conf.support_len(),
             }
             .init::<B>(device),
+            projection: MlpProjectionConfig {
+                latent_size: linear.dynamic.latent_space_dims,
+                proj_hidden: mz_conf.projection.proj_hidden,
+                proj_out: mz_conf.projection.proj_out,
+                pred_hidden: mz_conf.projection.pred_hidden,
+            }
+            .init::<B>(device),
         }
     }
 
@@ -65,5 +74,13 @@ impl<B: Backend> MuZeroNets<B> for MlpNets<B> {
 
     fn predict(&self, hidden: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         self.prediction.forward(hidden)
+    }
+
+    fn project(&self, hidden: Tensor<B, 2>) -> Tensor<B, 2> {
+        self.projection.project(hidden)
+    }
+
+    fn predict_projection(&self, projection: Tensor<B, 2>) -> Tensor<B, 2> {
+        self.projection.predict(projection)
     }
 }
