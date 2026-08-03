@@ -70,7 +70,7 @@ dependencies = [
 [[package]]
 name = "ale"
 version = "0.1.3"
-source = "git+https://github.com/BrageHK/ale-rs?rev=fff8f32324e61d8c32d6a9ebd3c778e20901eec1#fff8f32324e61d8c32d6a9ebd3c778e20901eec1"
+source = "git+https://github.com/BrageHK/ale-rs?rev=6f9b68fca8be9e21c98b305b4abcbcff5f1d00af#6f9b68fca8be9e21c98b305b4abcbcff5f1d00af"
 dependencies = [
  "ale-sys",
  "tempdir",
@@ -79,7 +79,7 @@ dependencies = [
 [[package]]
 name = "ale-sys"
 version = "0.1.2"
-source = "git+https://github.com/BrageHK/ale-rs?rev=fff8f32324e61d8c32d6a9ebd3c778e20901eec1#fff8f32324e61d8c32d6a9ebd3c778e20901eec1"
+source = "git+https://github.com/BrageHK/ale-rs?rev=6f9b68fca8be9e21c98b305b4abcbcff5f1d00af#6f9b68fca8be9e21c98b305b4abcbcff5f1d00af"
 dependencies = [
  "cmake",
  "tempdir",
