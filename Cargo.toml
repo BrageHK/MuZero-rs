@@ -7,8 +7,8 @@ version = "0.1.0"
 edition = "2024"
 
 [patch.crates-io]
-ale = { path = "vendor/ale" }
-ale-sys = { path = "vendor/ale-sys" }
+ale = { git = "https://github.com/BrageHK/ale-rs", rev = "fff8f32324e61d8c32d6a9ebd3c778e20901eec1" }
+ale-sys = { git = "https://github.com/BrageHK/ale-rs", rev = "fff8f32324e61d8c32d6a9ebd3c778e20901eec1" }
 
 [workspace.dependencies]
 burn = { version = "~0.21", default-features = false }
