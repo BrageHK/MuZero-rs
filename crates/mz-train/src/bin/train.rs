@@ -39,7 +39,7 @@ fn main() {
     let mut optimizer = AnyOptimizer::<TrainB, MlpNets<TrainB>>::new(&mz_conf);
     if let Some(ckpt) = &mz_conf.init_checkpoint {
         let opt_path = std::path::Path::new(ckpt).with_file_name("optimizer");
-        match CompactRecorder::new().load(opt_path.clone(), &train_device) {
+        match CompactRecorder::new().load(opt_path.clone(), &device) {
             Ok(record) => optimizer = optimizer.load_record(record),
             Err(e) => eprintln!("No optimizer state loaded from {opt_path:?}: {e}"),
         }
