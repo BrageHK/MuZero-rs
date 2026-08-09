@@ -3,13 +3,9 @@
 network_type: ResNet # Linear, ResNet
 environment: Othello # CartPole, TicTacToe, Othello, Atari
 
-# Only used when environment: Atari. Any variant of the ale::BundledRom enum
-# (e.g. Breakout, Pong, SpaceInvaders, MsPacman, Seaquest). Obs is a 1x84x84
-# grayscale frame, so pair Atari with network_type: ResNet and resnet.obs_channels: 1.
 atari_game: Breakout
 
 # Only for MLP
-# This config learns CartPole in a few minutes on CPU only
 linear:
     representation:
         latent_space_dims: 32
@@ -24,12 +20,10 @@ linear:
         fc_hidden_size: 64
         n_layers: 3
 
-# Only relevant when choosing ResNet above
 resnet:
-    obs_channels: 3
-    channels: 32
-    n_blocks: 4
-    fc_hidden_size: 64
+    channels: 256
+    n_blocks: 10
+    fc_hidden_size: 128
 
 # SimSiam projector (P1) / predictor (P2) for the EfficientZero consistency loss.
 # For ResNet the projector reduces channels and pools to 6x6 before these sizes apply.
@@ -41,55 +35,47 @@ projection:
 # Compute backends. Must be compiled in via cargo features (see crates/mz-train/Cargo.toml).
 # Options: auto, cuda, rocm, metal, vulkan, wgpu, flex, ndarray, libtorch, libtorch-gpu
 # auto = best compiled-in backend (cuda > metal > rocm > vulkan > wgpu > libtorch > flex > ndarray)
-training_backend: metal # wgpu
-inference_backend: metal # ndarray
+# Use cargo .... --features <YOUR-BACKEND>
+training_backend: vulkan # wgpu
+inference_backend: vulkan # ndarray
 
 # Training + algorithm
 n_steps: 5
 unroll_steps: 5
+train_ratio: 2
 
 # Batch sizes
-training_batch_size: 512
-game_batch_size: 512
+training_batch_size: 1024
+game_batch_size: 2048
 
 # Optimizer
 optimizer: Sgd # AdamW, Adam, Sgd
-discount: 0.997
-learning_rate: 0.02
+learning_rate: 0.1
+lr_decay_rate: 0.1
+lr_decay_steps: 350000
+lr_warmup_steps: 100    # Number of training steps to warmup
 grad_clip: 1.0
 weight_decay: 1e-4
 momentum: 0.9
-# Linear LR ramp over the first N training steps. EfficientZero warms up over 1%
-# of total steps. 0 disables.
-lr_warmup_steps: 100
 
-# Loss weights. EfficientZero: value 0.25, policy 1, reward 1, consistency 2
-# (5 on Atari). consistency_coef: 0.0 disables the SimSiam consistency term.
+# Loss weights
 value_coef: 0.25
 policy_coef: 1.0
-reward_coef: 1.0
-consistency_coef: 2.0
+reward_coef: 1.0                    # Omitted in board games
+consistency_coef: 2.0               # 2.0 on board, 5.0 on atari
 
-# Random shift (replication pad 4) + intensity jitter on observations. Image obs
-# only; ignored for 1D envs like CartPole.
-augmentation: false
 
-train_ratio: 2
-num_simulations: 16
+augmentation: false                 # Only useful for atari
+
 
 # Search
-# Puct: MuZero PUCT + Dirichlet root noise + visit-count policy targets.
-# Gumbel: Gumbel MuZero, Sequential Halving over Gumbel-perturbed logits at the
-# root. Guarantees policy improvement even at very low num_simulations.
 search_algorithm: Gumbel # Puct, Gumbel
+num_simulations: 32
+discount: 1.0 # 0.997
 
-# Only relevant when search_algorithm: Puct
 puct:
     dirichlet_alpha: 0.25
     root_exploration_fraction: 0.25
-    # Original muzero paper uses t = 1 first 500k steps, t = 0.5 for next 250k
-    # and 0.25 for remaining. Gumbel action choice is deterministic, so tau has
-    # no Gumbel equivalent.
     temperature_schedule:
         - step: 500000
           tau: 1.0
@@ -98,52 +84,41 @@ puct:
         - step: null # remaining steps
           tau: 0.25
 
-# Only relevant when search_algorithm: Gumbel
 gumbel:
     max_num_considered_actions: 8 # top-m root actions entering Sequential Halving
     c_visit: 50.0
     c_scale: 0.1
 
-# Board-game evaluation (TicTacToe, Othello). The agent plays a batch of games
-# against a benchmark opponent and the score is turned into a rough Elo. Anchor
-# values are arbitrary; only movement between evals is meaningful. Ignored for
-# single-player envs. Omit the whole block to use these defaults.
+# Elo rating for board games
 eval:
-    interval: 500 # training steps between evals; 0 disables
-    games: 512 # split evenly between playing first and second
-    num_simulations: 50 # null = same as training
-    random_opening_plies: 4 # random plies before the agents take over
-    promote_score: 0.80 # score at which the agent moves up a rung
-    demote_score: 0.20 # score at which it drops back down
-    seed: 1592426000 # fixed, so every eval replays the same opening book
-    # null = the built-in ladder for the chosen environment:
-    #   Othello:   Random(0) -> AB d1 e.05 (500) -> AB d3 e.02 (1000) -> AB d5 (1400)
-    #   TicTacToe: Random(0) -> AB d1 e.2  (300) -> AB d3 e.1  (600)  -> AB d9 (900)
-    # `epsilon` is the chance of playing a random legal move instead of the
-    # alpha-beta pick, which keeps the weaker rungs beatable and games varied.
+    interval: 1000                  # training steps between evals. 0 disables
+    games: 2048
+    num_simulations: null           # null = same as training
+    random_opening_plies: 4         # random plies before the agents take over
+    promote_score: 0.80             # score at which the agent moves up one opponent
+    demote_score: 0.20              # score at which it drops back down
+    seed: 1592426000
     ladder: null
 
-# Categorical value/reward support. Heads predict a distribution over
-# 2*support_size+1 bins under the invertible scaling transform (paper App. F).
-support_size: 35
+support_size: 35                    # Not used in board games
 
-inference_update_interval: 10 # update inference network every N training steps
-checkpoint_interval: 1000 # save network checkpoint to model/env_name every N training steps
+inference_update_interval: 100      # update inference network every N training steps
+checkpoint_interval: 10000          # save network checkpoint to model/env_name every N training steps
 
 # Plotting
-avg_window: 100 # avg-reward plot averages over the last N finished games
-rate_window_secs: 10 # env-steps/sec plot averages over the last N seconds
+avg_window: 100                     # avg-reward plot averages over the last N finished games
+rate_window_secs: 10                # env-steps/sec plot averages over the last N seconds
 
 buffer_size: 1000000
 training_steps: 10000000
 
 # Reanalyze
-reanalyze_fraction: 0.001          # max chance for the stalest samples; 0.0 disables
-reanalyze_batch_size: 4096             # candidate entries sampled per training step
+reanalyze_fraction: 0.05            # chance per iteration of refreshing the stalest samples; 0.0 disables
+reanalyze_batch_size: 2048          # candidate entries sampled per training step
 
 # Parallel settings
 rayon_min_chunk_len: 512
 
 # Optional: checkpoint under model/ to init agent from (path w/o .mpk ext, e.g. "model/latest" or "model/best").
 # null/omitted = fresh random init.
-init_checkpoint: null
+init_checkpoint: null #model/Othello/latest.mpk
