@@ -224,15 +224,15 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
     fn init(net_conf: &NetConfig, device: &B::Device) -> Self {
         let resnet = net_conf.resnet();
         ResNetConfig {
-            obs_channels: resnet.obs_channels,
+            obs_channels: net_conf.obs_channels,
             channels: resnet.channels,
             n_blocks: resnet.n_blocks,
             board_height: net_conf.board_height,
             board_width: net_conf.board_width,
             action_space: net_conf.action_space,
             fc_hidden_size: resnet.fc_hidden_size,
-            value_support: net_conf.support_len(),
-            reward_support: net_conf.support_len(),
+            value_support: net_conf.value_support_len(),
+            reward_support: net_conf.reward_support_len(),
             proj_hidden: net_conf.projection.proj_hidden,
             proj_out: net_conf.projection.proj_out,
             pred_hidden: net_conf.projection.pred_hidden,

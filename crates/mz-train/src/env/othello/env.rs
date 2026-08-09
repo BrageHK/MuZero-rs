@@ -42,7 +42,7 @@ impl Environment for Othello {
     }
 
     const INFO: EnvInfo = EnvInfo {
-        obs_shape: &[1, 8, 8],
+        obs_shape: &[3, 8, 8],
         action_size: mz_core::othello::ACTION_SIZE,
         num_players: 2,
         lower_reward_bound: Some(0.0),
@@ -205,9 +205,11 @@ mod tests {
         assert_eq!(s.own.count_ones(), 1);
         assert_eq!(s.opp.count_ones(), 4);
         let obs = s.to_obs();
-        assert_eq!(obs[36], 1.0); // white e5
-        assert_eq!(obs[19], -1.0); // black d3
-        assert_eq!(obs[0], 0.0);
+        assert_eq!(obs[36], 1.0); // white e5, own plane
+        assert_eq!(obs[64 + 19], 1.0); // black d3, opp plane
+        assert_eq!(obs[128], 1.0); // a1, empty plane
+        assert_eq!(obs[19], 0.0); // d3 not own
+        assert_eq!(obs[64 + 36], 0.0); // e5 not opp
     }
 
     #[test]

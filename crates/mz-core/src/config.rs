@@ -24,7 +24,6 @@ pub struct LinearSubConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ResNetSubConfig {
-    pub obs_channels: usize,
     pub channels: usize,
     pub n_blocks: usize,
     pub fc_hidden_size: usize,
@@ -56,8 +55,12 @@ pub struct NetConfig {
     pub obs_dim: usize,
     pub action_space: usize,
     pub support_size: usize,
+    /// Categorical (two-hot) value/reward heads for single-player envs; a plain
+    /// scalar head for board games (paper App. F/G: l^v=(z-q)^2, l^r=0).
+    pub categorical: bool,
     pub board_height: usize,
     pub board_width: usize,
+    pub obs_channels: usize,
     pub linear: Option<LinearSubConfig>,
     pub resnet: Option<ResNetSubConfig>,
     pub projection: ProjectionSubConfig,
@@ -66,6 +69,14 @@ pub struct NetConfig {
 impl NetConfig {
     pub fn support_len(&self) -> usize {
         support_len(self.support_size)
+    }
+
+    pub fn value_support_len(&self) -> usize {
+        if self.categorical { self.support_len() } else { 1 }
+    }
+
+    pub fn reward_support_len(&self) -> usize {
+        if self.categorical { self.support_len() } else { 1 }
     }
 
     pub fn linear(&self) -> &LinearSubConfig {
