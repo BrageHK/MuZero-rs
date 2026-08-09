@@ -16,7 +16,7 @@ sudo pacman -S sdl2_gfx
 
 Mac:
 ```bash
-brew install sdl2_gfx
+brew install sdl2_gfx pkgconf
 ```
 
 ## AMD path variables
