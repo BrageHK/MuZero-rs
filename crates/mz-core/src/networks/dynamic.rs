@@ -18,7 +18,8 @@ pub struct DynamicModelMLP<B: Backend> {
 
 impl<B: Backend> DynamicModelMLP<B> {
     /// Returns (hidden_state, reward_logits). reward_logits is a categorical
-    /// distribution over the reward support (see `support`).
+    /// distribution over the reward support (see `support`) for single-player
+    /// envs, or a plain scalar column (width 1) for board games.
     pub fn forward(
         &self,
         hidden: Tensor<B, 2>,

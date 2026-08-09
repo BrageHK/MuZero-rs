@@ -6,7 +6,7 @@ use rand_distr::{Distribution, Gumbel, multi::Dirichlet};
 use rayon::prelude::*;
 
 use crate::networks::MuZeroNets;
-use crate::support::logits_to_scalars;
+use crate::support::output_to_scalars;
 use crate::{
     mz_config::{MuZeroConfig, SearchAlgorithm},
     utils::QNormalization,
@@ -55,6 +55,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     let discount = mz_conf.discount;
     let action_space = mz_conf.action_space;
     let value_sign = if mz_conf.is_twoplayer { -1.0f32 } else { 1.0f32 };
+    let categorical = mz_conf.categorical();
     let algorithm = mz_conf.search_algorithm;
     let puct_conf = match algorithm {
         SearchAlgorithm::Puct => Some(mz_conf.puct()),
@@ -105,9 +106,9 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
 
     let support_size = mz_conf.support_size;
     let root_rewards =
-        logits_to_scalars(&root_rewards.into_vec::<f32>().unwrap(), batch_size, support_size);
+        output_to_scalars(&root_rewards.into_vec::<f32>().unwrap(), batch_size, support_size, categorical);
     let root_values =
-        logits_to_scalars(&root_values.into_vec::<f32>().unwrap(), batch_size, support_size);
+        output_to_scalars(&root_values.into_vec::<f32>().unwrap(), batch_size, support_size, categorical);
     let root_policies = root_policies.into_vec::<f32>().unwrap();
 
     let forced_result = |i: usize, action: usize| {
@@ -324,9 +325,9 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
             .expect("Correct amount of tensor data");
 
         let new_rewards =
-            logits_to_scalars(&new_rewards.into_vec::<f32>().unwrap(), n_active, support_size);
+            output_to_scalars(&new_rewards.into_vec::<f32>().unwrap(), n_active, support_size, categorical);
         let new_values =
-            logits_to_scalars(&new_values.into_vec::<f32>().unwrap(), n_active, support_size);
+            output_to_scalars(&new_values.into_vec::<f32>().unwrap(), n_active, support_size, categorical);
         let new_policies = new_policies.into_vec::<f32>().unwrap();
 
         // Expansion + backprop, one rayon task per tree

@@ -52,6 +52,18 @@ pub fn logits_to_scalars(flat_logits: &[f32], batch: usize, support_size: usize)
         .collect()
 }
 
+/// Converts raw head output to per-row scalars. Categorical rows are
+/// `support_len(support_size)`-wide logits decoded via softmax + the invertible
+/// transform; scalar rows (board games) are already the prediction (width 1)
+/// and are returned as-is.
+pub fn output_to_scalars(flat: &[f32], batch: usize, support_size: usize, categorical: bool) -> Vec<f32> {
+    if categorical {
+        logits_to_scalars(flat, batch, support_size)
+    } else {
+        flat.to_vec()
+    }
+}
+
 pub fn two_hot_batch(values: &[f32], support_size: usize) -> Vec<f32> {
     let mut out = Vec::with_capacity(values.len() * support_len(support_size));
     for &v in values {
@@ -82,5 +94,24 @@ mod tests {
             let recovered = support_to_scalar(&two_hot, support_size);
             assert!((x - recovered).abs() < 1e-2, "{x} -> {recovered}");
         }
+    }
+
+    #[test]
+    fn output_to_scalars_matches_logits_to_scalars_when_categorical() {
+        let support_size = 5;
+        let len = support_len(support_size);
+        let batch = 3;
+        let flat: Vec<f32> = (0..batch * len).map(|i| (i as f32) * 0.1 - 1.0).collect();
+
+        let expected = logits_to_scalars(&flat, batch, support_size);
+        let actual = output_to_scalars(&flat, batch, support_size, true);
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn output_to_scalars_is_identity_when_scalar() {
+        let flat = vec![-0.7, 0.0, 1.0, 0.25];
+        let actual = output_to_scalars(&flat, flat.len(), 0, false);
+        assert_eq!(actual, flat);
     }
 }

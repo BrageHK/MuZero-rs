@@ -84,11 +84,25 @@ pub fn tau_for_step(schedule: &[TemperatureSchedule], step: usize) -> f32 {
     schedule.last().map(|e| e.tau).unwrap_or(1.0)
 }
 
-pub fn lr_for_step(base_lr: f64, warmup_steps: usize, step: usize) -> f64 {
-    if warmup_steps == 0 || step >= warmup_steps {
-        return base_lr;
+/// Linear warmup, then the MuZero pseudocode's exponential decay:
+/// `lr = lr_init * lr_decay_rate ** (step / lr_decay_steps)`.
+pub fn lr_for_step(
+    base_lr: f64,
+    warmup_steps: usize,
+    decay_rate: f64,
+    decay_steps: usize,
+    step: usize,
+) -> f64 {
+    let warmed = if warmup_steps == 0 || step >= warmup_steps {
+        base_lr
+    } else {
+        base_lr * (step + 1) as f64 / warmup_steps as f64
+    };
+    if decay_steps == 0 {
+        warmed
+    } else {
+        warmed * decay_rate.powf(step as f64 / decay_steps as f64)
     }
-    base_lr * (step + 1) as f64 / warmup_steps as f64
 }
 
 pub struct QNormalization {
@@ -138,9 +152,21 @@ mod lr_tests {
 
     #[test]
     fn warmup_ramps_then_holds() {
-        assert_eq!(lr_for_step(0.2, 0, 0), 0.2);
-        assert_eq!(lr_for_step(0.2, 4, 0), 0.05);
-        assert_eq!(lr_for_step(0.2, 4, 3), 0.2);
-        assert_eq!(lr_for_step(0.2, 4, 99), 0.2);
+        assert_eq!(lr_for_step(0.2, 0, 1.0, 0, 0), 0.2);
+        assert_eq!(lr_for_step(0.2, 4, 1.0, 0, 0), 0.05);
+        assert_eq!(lr_for_step(0.2, 4, 1.0, 0, 3), 0.2);
+        assert_eq!(lr_for_step(0.2, 4, 1.0, 0, 99), 0.2);
+    }
+
+    #[test]
+    fn decay_matches_muzero_pseudocode_formula() {
+        assert_eq!(lr_for_step(0.1, 0, 0.1, 100, 0), 0.1);
+        assert!((lr_for_step(0.1, 0, 0.1, 100, 100) - 0.01).abs() < 1e-9);
+        assert!((lr_for_step(0.1, 0, 0.1, 100, 200) - 0.001).abs() < 1e-9);
+    }
+
+    #[test]
+    fn zero_decay_steps_disables_decay() {
+        assert_eq!(lr_for_step(0.1, 0, 0.1, 0, 100_000), 0.1);
     }
 }

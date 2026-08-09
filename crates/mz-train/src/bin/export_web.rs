@@ -63,8 +63,10 @@ fn main() {
          \x20   obs_dim: {obs_dim},\n\
          \x20   action_space: {action_space},\n\
          \x20   support_size: {support_size},\n\
+         \x20   categorical: {categorical},\n\
          \x20   board_height: {board_height},\n\
          \x20   board_width: {board_width},\n\
+         \x20   obs_channels: {obs_channels},\n\
          \x20   linear: Some(LinearSubConfig {{\n{repr}{dynamic}{prediction}\x20   }}),\n\
          \x20   resnet: None,\n\
          \x20   projection: ProjectionSubConfig {{\n\
@@ -87,8 +89,10 @@ fn main() {
         obs_dim = net.obs_dim,
         action_space = net.action_space,
         support_size = net.support_size,
+        categorical = net.categorical,
         board_height = net.board_height,
         board_width = net.board_width,
+        obs_channels = net.obs_channels,
         repr = layer("representation", &linear.representation),
         dynamic = layer("dynamic", &linear.dynamic),
         prediction = layer("prediction", &linear.prediction),

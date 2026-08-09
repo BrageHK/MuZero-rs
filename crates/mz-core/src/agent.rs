@@ -38,7 +38,7 @@ impl<B: Backend> MuZeroNets<B> for MlpNets<B> {
                 fc_hidden_size: linear.dynamic.fc_hidden_size,
                 hidden_output: linear.dynamic.latent_space_dims,
                 n_layers: linear.dynamic.n_layers,
-                reward_support: net_conf.support_len(),
+                reward_support: net_conf.reward_support_len(),
             }
             .init::<B>(device),
             prediction: PredictionModelConfig {
@@ -46,7 +46,7 @@ impl<B: Backend> MuZeroNets<B> for MlpNets<B> {
                 hidden_size: linear.prediction.latent_space_dims,
                 action_space: net_conf.action_space,
                 n_layers: linear.prediction.n_layers,
-                value_support: net_conf.support_len(),
+                value_support: net_conf.value_support_len(),
             }
             .init::<B>(device),
             projection: MlpProjectionConfig {

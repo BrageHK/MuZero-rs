@@ -7,7 +7,6 @@ use burn::{
     tensor::{Int, TensorData, Transaction, backend::Backend},
 };
 use mz_core::networks::MuZeroNets;
-use mz_core::support::logits_to_scalars;
 
 use crate::rng::Rng;
 
@@ -58,7 +57,6 @@ pub async fn gumbel_search<B: Backend, N: MuZeroNets<B>>(
     let action_space = params.action_space;
     let discount = params.discount;
     let value_sign = if params.two_player { -1.0f32 } else { 1.0f32 };
-    let support_size = params.support_size;
 
     let obs = Tensor::<B, 1>::from_floats(obs, device).reshape([1, obs.len()]);
     let (root_hidden, _, root_value, root_policy) = net.initial_inference(obs);
@@ -71,7 +69,7 @@ pub async fn gumbel_search<B: Backend, N: MuZeroNets<B>>(
         .expect("root inference readback")
         .try_into()
         .expect("Correct amount of tensor data");
-    let root_value = logits_to_scalars(&root_value.into_vec::<f32>().unwrap(), 1, support_size)[0];
+    let root_value = root_value.into_vec::<f32>().unwrap()[0];
     let logits = root_policy.into_vec::<f32>().unwrap();
 
     let legal_actions: Vec<usize> = (0..action_space).filter(|&a| legal[a]).collect();
@@ -180,8 +178,8 @@ pub async fn gumbel_search<B: Backend, N: MuZeroNets<B>>(
             .expect("recurrent inference readback")
             .try_into()
             .expect("Correct amount of tensor data");
-        let reward = logits_to_scalars(&reward.into_vec::<f32>().unwrap(), 1, support_size)[0];
-        let value = logits_to_scalars(&value.into_vec::<f32>().unwrap(), 1, support_size)[0];
+        let reward = reward.into_vec::<f32>().unwrap()[0];
+        let value = value.into_vec::<f32>().unwrap()[0];
         let logits = policy.into_vec::<f32>().unwrap();
 
         let first_child = nodes.len();

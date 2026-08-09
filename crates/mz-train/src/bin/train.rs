@@ -18,6 +18,7 @@ use mz_rs::search::batched_search;
 use mz_rs::train::train;
 use mz_rs::tui_metrics::TrainingTui;
 use mz_rs::augment::Augmenter;
+use mz_rs::board_symmetry::BoardSymmetry;
 use mz_rs::utils::{lr_for_step, save_buffer, select_device, tau_for_step};
 use mz_rs::with_env;
 
@@ -39,7 +40,7 @@ fn main() {
     let mut optimizer = AnyOptimizer::<TrainB, MlpNets<TrainB>>::new(&mz_conf);
     if let Some(ckpt) = &mz_conf.init_checkpoint {
         let opt_path = std::path::Path::new(ckpt).with_file_name("optimizer");
-        match CompactRecorder::new().load(opt_path.clone(), &train_device) {
+        match CompactRecorder::new().load(opt_path.clone(), &device) {
             Ok(record) => optimizer = optimizer.load_record(record),
             Err(e) => eprintln!("No optimizer state loaded from {opt_path:?}: {e}"),
         }
@@ -49,6 +50,7 @@ fn main() {
 
     let mut buffer = ReplayBuffer::new(&mz_conf);
     let mut augmenter = Augmenter::from_config(&mz_conf);
+    let mut board_sym = BoardSymmetry::from_config(&mz_conf);
     let mut tui = TrainingTui::new(&mz_conf);
     let mut ladder = EloLadder::new(&mz_conf);
 
@@ -157,7 +159,14 @@ fn main() {
                     &mz_conf,
                     &mut buffer,
                     augmenter.as_mut(),
-                    lr_for_step(mz_conf.learning_rate, mz_conf.lr_warmup_steps, training_step),
+                    board_sym.as_mut(),
+                    lr_for_step(
+                        mz_conf.learning_rate,
+                        mz_conf.lr_warmup_steps,
+                        mz_conf.lr_decay_rate,
+                        mz_conf.lr_decay_steps,
+                        training_step,
+                    ),
                     &train_device,
                 );
                 if let Some(metrics) = metrics {

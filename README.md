@@ -9,6 +9,8 @@ this program is written in Rust.
 
 ## sdl2_gfx
 
+This is requried for CartPole to work.
+
 Arch:
 ```bash
 sudo pacman -S sdl2_gfx
@@ -21,6 +23,8 @@ brew install sdl2_gfx pkgconf
 
 ## AMD path variables
 
+Only needed if using rocm backend.
+
 ```bash
 export ROCM_PATH=/opt/rocm
 export HIP_PATH=/opt/rocm
@@ -29,8 +33,10 @@ export HSA_OVERRIDE_GFX_VERSION=11.0.0
 
 ## Training
 
+The available backends are listed in [config.yaml](configs/config.yaml).
+
 ```bash
-cargo run -r --bin train
+cargo run -r -p mz-train --bin train --features YOUR_BACKEND
 ```
 
 ## Othello in the browser

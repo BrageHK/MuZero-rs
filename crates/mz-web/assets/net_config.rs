@@ -3,8 +3,10 @@ pub const NET: NetConfig = NetConfig {
     obs_dim: 64,
     action_space: 65,
     support_size: 35,
+    categorical: false,
     board_height: 8,
     board_width: 8,
+    obs_channels: 1,
     linear: Some(LinearSubConfig {
         representation: NetworkSubConfig {
             latent_space_dims: 32,
