@@ -270,6 +270,10 @@ pub struct MuZeroConfig {
     // rayon with_min_len chunk size: batches smaller than this run serially.
     pub rayon_min_chunk_len: usize,
 
+    // Run self-play and network training on two threads instead of one loop.
+    #[serde(default)]
+    pub async_training: bool,
+
     // None => random init
     #[serde(default)]
     pub init_checkpoint: Option<String>,

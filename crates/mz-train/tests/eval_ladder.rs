@@ -4,6 +4,9 @@ use burn::backend::NdArray;
 use burn::backend::ndarray::NdArrayDevice;
 
 use mz_rs::agent::MlpNets;
+use mz_rs::env::Environment;
+use mz_rs::env::othello::env::Othello;
+use mz_rs::env::tictactoe::env::TicTacToe;
 use mz_rs::eval::EloLadder;
 use mz_rs::mz_config::{
     EnvironmentName, EvalConfig, GumbelSubConfig, MuZeroConfig, RungConfig, SearchAlgorithm,
@@ -11,8 +14,8 @@ use mz_rs::mz_config::{
 
 fn config(environment: EnvironmentName, ladder: Vec<RungConfig>) -> MuZeroConfig {
     let (action_space, obs_dim) = match environment {
-        EnvironmentName::TicTacToe => (9, 9),
-        EnvironmentName::Othello => (65, 64),
+        EnvironmentName::TicTacToe => (TicTacToe::INFO.action_size, TicTacToe::INFO.obs_dim()),
+        EnvironmentName::Othello => (Othello::INFO.action_size, Othello::INFO.obs_dim()),
         _ => panic!("not a board game"),
     };
 
@@ -97,7 +100,10 @@ fn eval_only_runs_on_the_interval() {
 
 #[test]
 fn single_player_environments_have_no_ladder() {
-    let mz_conf = MuZeroConfig::default();
-    assert!(matches!(mz_conf.environment, EnvironmentName::CartPole));
+    let mz_conf = MuZeroConfig {
+        environment: EnvironmentName::CartPole,
+        is_twoplayer: false,
+        ..Default::default()
+    };
     assert!(!EloLadder::new(&mz_conf).enabled());
 }

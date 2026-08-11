@@ -9,7 +9,8 @@ use mz_rs::agent::MlpNets;
 use mz_rs::env::Environment;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
 use mz_rs::mz_config::{
-    GumbelSubConfig, MuZeroConfig, PuctSubConfig, SearchAlgorithm, TemperatureSchedule,
+    GumbelSubConfig, MuZeroConfig, NetworkType, PuctSubConfig, SearchAlgorithm,
+    TemperatureSchedule,
 };
 use mz_rs::networks::nets_to_backend;
 use mz_rs::optim::AnyOptimizer;
@@ -40,6 +41,10 @@ fn config(algorithm: SearchAlgorithm) -> MuZeroConfig {
         training_batch_size: 64,
         game_batch_size: 64,
         rayon_min_chunk_len: 8,
+        network_type: NetworkType::Linear,
+        obs_dim: CartPoleWrapper::INFO.obs_dim(),
+        action_space: CartPoleWrapper::INFO.action_size,
+        is_twoplayer: false,
         ..Default::default()
     }
 }
