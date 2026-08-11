@@ -6,7 +6,7 @@ use burn::{
         BatchNorm, BatchNormConfig, Linear, LinearConfig, PaddingConfig2d, Relu,
         conv::{Conv2d, Conv2dConfig},
     },
-    tensor::{Int, backend::Backend},
+    tensor::{IndexingUpdateOp, Int, backend::Backend},
 };
 
 use crate::config::NetConfig;
@@ -81,9 +81,14 @@ impl<B: Backend> ResNetDynamics<B> {
         action_size: usize,
     ) -> (Tensor<B, 4>, Tensor<B, 2>) {
         let [n, _, h, w] = hidden.dims();
-        let action_planes = action
-            .one_hot::<2>(action_size)
-            .float()
+        let device = hidden.device();
+        let action_planes = Tensor::<B, 2>::zeros([n, action_size], &device)
+            .scatter(
+                1,
+                action.reshape([n, 1]),
+                Tensor::<B, 2>::ones([n, 1], &device),
+                IndexingUpdateOp::Add,
+            )
             .reshape([n, action_size, 1, 1])
             .expand([n, action_size, h, w]);
 

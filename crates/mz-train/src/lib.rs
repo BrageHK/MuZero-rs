@@ -1,3 +1,4 @@
+pub mod async_train;
 pub mod augment;
 pub mod env;
 pub mod eval;

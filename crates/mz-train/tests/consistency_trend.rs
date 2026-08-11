@@ -7,7 +7,7 @@ use burn::module::AutodiffModule;
 use mz_rs::agent::MlpNets;
 use mz_rs::env::Environment;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
-use mz_rs::mz_config::{GumbelSubConfig, MuZeroConfig, SearchAlgorithm};
+use mz_rs::mz_config::{GumbelSubConfig, MuZeroConfig, NetworkType, SearchAlgorithm};
 use mz_rs::networks::nets_to_backend;
 use mz_rs::optim::AnyOptimizer;
 use mz_rs::replay_buffer::{BufferData, ReplayBuffer};
@@ -30,6 +30,10 @@ fn consistency_improves_without_collapsing() {
         game_batch_size: 64,
         rayon_min_chunk_len: 8,
         consistency_coef: 2.0,
+        network_type: NetworkType::Linear,
+        obs_dim: CartPoleWrapper::INFO.obs_dim(),
+        action_space: CartPoleWrapper::INFO.action_size,
+        is_twoplayer: false,
         ..Default::default()
     };
 

@@ -72,13 +72,27 @@ pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
     }
 }
 
+pub fn nets_to_bytes<B: Backend, N: MuZeroNets<B>>(nets: &N) -> Vec<u8> {
+    BinBytesRecorder::<FullPrecisionSettings>::default()
+        .record(nets.clone().into_record(), ())
+        .unwrap()
+}
+
+pub fn nets_from_bytes<B: Backend, N: MuZeroNets<B>>(
+    bytes: Vec<u8>,
+    net_conf: &NetConfig,
+    device: &B::Device,
+) -> N {
+    let record = BinBytesRecorder::<FullPrecisionSettings>::default()
+        .load(bytes, device)
+        .unwrap();
+    N::init(net_conf, device).load_record(record)
+}
+
 pub fn nets_to_backend<B1: Backend, B2: Backend, N1: MuZeroNets<B1>, N2: MuZeroNets<B2>>(
     nets: &N1,
     net_conf: &NetConfig,
     device: &B2::Device,
 ) -> N2 {
-    let recorder = BinBytesRecorder::<FullPrecisionSettings>::default();
-    let bytes = recorder.record(nets.clone().into_record(), ()).unwrap();
-    let record = recorder.load(bytes, device).unwrap();
-    N2::init(net_conf, device).load_record(record)
+    nets_from_bytes(nets_to_bytes(nets), net_conf, device)
 }

@@ -20,8 +20,12 @@ use crate::eval::EvalReading;
 use crate::mz_config::{MuZeroConfig, SearchAlgorithm};
 
 pub struct TrainingTui {
-    renderer: TuiMetricsRendererWrapper,
+    renderer: Option<TuiMetricsRendererWrapper>,
     interrupter: Interrupter,
+    started: Instant,
+    last_print: Instant,
+    last_sps: f64,
+    last_loss: f32,
     total_steps: usize,
     avg_window: usize,
     rate_window: Duration,
@@ -52,16 +56,21 @@ pub struct TrainingTui {
 impl TrainingTui {
     pub fn new(mz_conf: &MuZeroConfig) -> Self {
         let interrupter = Interrupter::new();
-        let mut renderer = TuiMetricsRendererWrapper::new(interrupter.clone(), None);
+        // MZ_HEADLESS swaps the TUI for one metrics line per second on stdout.
+        let mut renderer = std::env::var_os("MZ_HEADLESS")
+            .is_none()
+            .then(|| TuiMetricsRendererWrapper::new(interrupter.clone(), None));
 
         let mut register = |name: &str, attributes: MetricAttributes| {
             let id = MetricId::new(Arc::new(name.to_string()));
-            renderer.register_metric(MetricDefinition {
-                metric_id: id.clone(),
-                name: name.to_string(),
-                description: None,
-                attributes,
-            });
+            if let Some(renderer) = renderer.as_mut() {
+                renderer.register_metric(MetricDefinition {
+                    metric_id: id.clone(),
+                    name: name.to_string(),
+                    description: None,
+                    attributes,
+                });
+            }
             Some(id)
         };
         let mut numeric = |name: &str, higher_is_better: bool| {
@@ -112,6 +121,10 @@ impl TrainingTui {
         Self {
             renderer,
             interrupter,
+            started: Instant::now(),
+            last_print: Instant::now(),
+            last_sps: 0.0,
+            last_loss: f32::NAN,
             total_steps: mz_conf.training_steps,
             avg_window: mz_conf.avg_window,
             rate_window: Duration::from_secs_f32(mz_conf.rate_window_secs),
@@ -140,14 +153,18 @@ impl TrainingTui {
         }
     }
 
-    fn set(renderer: &mut TuiMetricsRendererWrapper, id: &Option<MetricId>, value: f64) {
-        if let Some(id) = id {
+    fn set(renderer: &mut Option<TuiMetricsRendererWrapper>, id: &Option<MetricId>, value: f64) {
+        if let (Some(renderer), Some(id)) = (renderer.as_mut(), id) {
             renderer.update_train(numeric_state(id, value));
         }
     }
 
-    fn set_text(renderer: &mut TuiMetricsRendererWrapper, id: &Option<MetricId>, value: &str) {
-        if let Some(id) = id {
+    fn set_text(
+        renderer: &mut Option<TuiMetricsRendererWrapper>,
+        id: &Option<MetricId>,
+        value: &str,
+    ) {
+        if let (Some(renderer), Some(id)) = (renderer.as_mut(), id) {
             renderer.update_train(MetricState::Generic(MetricEntry::new(
                 id.clone(),
                 SerializedEntry::new(value.to_string(), value.to_string()),
@@ -200,6 +217,7 @@ impl TrainingTui {
     }
 
     pub fn set_loss(&mut self, loss: f32) {
+        self.last_loss = loss;
         Self::set(&mut self.renderer, &self.loss_id, loss as f64);
     }
 
@@ -232,6 +250,7 @@ impl TrainingTui {
         let elapsed = now.duration_since(first_t).as_secs_f64();
         if elapsed > 0.0 {
             let rate = (self.env_steps - first_steps) as f64 / elapsed;
+            self.last_sps = rate;
             Self::set(&mut self.renderer, &self.sps_id, rate);
         }
     }
@@ -246,35 +265,57 @@ impl TrainingTui {
             global_progress: Progress::new(step, self.total_steps),
             iteration: Some(step),
         };
-        self.renderer.render_train(
-            progress,
-            vec![
-                ProgressType::Value {
-                    tag: "Env steps".to_string(),
-                    value: self.env_steps,
-                },
-                ProgressType::Value {
-                    tag: "Train steps".to_string(),
-                    value: self.train_steps,
-                },
-                ProgressType::Value {
-                    tag: "Games".to_string(),
-                    value: self.games_finished,
-                },
-                ProgressType::Value {
-                    tag: "Buffer states".to_string(),
-                    value: self.buffer_states,
-                },
-            ],
-        );
+        let counters = vec![
+            ProgressType::Value {
+                tag: "Env steps".to_string(),
+                value: self.env_steps,
+            },
+            ProgressType::Value {
+                tag: "Train steps".to_string(),
+                value: self.train_steps,
+            },
+            ProgressType::Value {
+                tag: "Games".to_string(),
+                value: self.games_finished,
+            },
+            ProgressType::Value {
+                tag: "Buffer states".to_string(),
+                value: self.buffer_states,
+            },
+        ];
+
+        match self.renderer.as_mut() {
+            Some(renderer) => renderer.render_train(progress, counters),
+            None => {
+                if self.last_print.elapsed() >= Duration::from_secs(1) {
+                    self.last_print = Instant::now();
+                    println!(
+                        "t={:.1} step={step} env_steps={} train_steps={} games={} buffer={} sps={:.0} loss={:.4}",
+                        self.started.elapsed().as_secs_f64(),
+                        self.env_steps,
+                        self.train_steps,
+                        self.games_finished,
+                        self.buffer_states,
+                        self.last_sps,
+                        self.last_loss,
+                    );
+                }
+            }
+        }
     }
 
     pub fn should_stop(&self) -> bool {
         self.interrupter.should_stop()
     }
 
+    pub fn interrupter(&self) -> Interrupter {
+        self.interrupter.clone()
+    }
+
     pub fn close(mut self) {
-        self.renderer.manual_close();
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.manual_close();
+        }
     }
 }
 

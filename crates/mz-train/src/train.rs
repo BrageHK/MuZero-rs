@@ -1,10 +1,10 @@
 use burn::{
-    module::AutodiffModule,  optim::{GradientsParams, Optimizer}, tensor::{Int, Tensor, activation::log_softmax, backend::AutodiffBackend, cast::ToElement, linalg::cosine_similarity},
+    module::AutodiffModule,  optim::{GradientsParams, Optimizer}, tensor::{Int, Tensor, activation::log_softmax, backend::{AutodiffBackend, Backend}, cast::ToElement, linalg::cosine_similarity},
 };
 
 use crate::{
     augment::Augmenter, mz_config::MuZeroConfig, networks::{MuZeroNets, scale_hidden_state},
-    replay_buffer::{BufferData, ReplayBuffer}, support::two_hot_batch,
+    replay_buffer::{BufferData, ReplayBuffer}, search::batched_search, support::two_hot_batch,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -177,6 +177,41 @@ fn masked_mean<B: AutodiffBackend>(values: Tensor<B, 2>, mask: Tensor<B, 2>) -> 
     (values * mask).sum() / valid
 }
 
+pub fn reanalyze_due(mz_conf: &MuZeroConfig) -> bool {
+    rand::random::<f32>() < mz_conf.reanalyze_fraction
+}
+
+pub fn reanalyze<B: Backend, N: MuZeroNets<B>>(
+    mz_conf: &MuZeroConfig,
+    buffer: &mut ReplayBuffer,
+    training_step: usize,
+    device: &B::Device,
+    agent: &N,
+) {
+    let idxs = buffer.sample_reanalyze_indices(mz_conf.reanalyze_batch_size, training_step);
+    if idxs.is_empty() {
+        return;
+    }
+    let dim = mz_conf.obs_dim;
+    let mut data = Vec::with_capacity(idxs.len() * dim);
+    for &idx in &idxs {
+        data.extend_from_slice(&buffer.states[idx].state);
+    }
+    let obs = Tensor::<B, 1>::from_floats(data.as_slice(), device).reshape([idxs.len(), dim]);
+    let masks: Vec<Vec<bool>> = idxs
+        .iter()
+        .map(|&idx| buffer.states[idx].legal_mask.clone())
+        .collect();
+    let results = batched_search(obs, Some(&masks), mz_conf, agent, 1.0, false);
+    for (&idx, r) in idxs.iter().zip(results.iter()) {
+        buffer.states[idx].policy = r.policy_target.clone();
+        if !mz_conf.is_twoplayer {
+            buffer.states[idx].value = r.value;
+        }
+        buffer.states[idx].created_step = training_step;
+    }
+}
+
 #[cfg(all(test, feature = "ndarray"))]
 mod tests {
     use burn::backend::{Autodiff, NdArray, ndarray::NdArrayDevice};
@@ -193,6 +228,9 @@ mod tests {
             training_batch_size: 8,
             consistency_coef,
             is_twoplayer: false,
+            network_type: crate::mz_config::NetworkType::Linear,
+            obs_dim: 4,
+            action_space: 4,
             ..Default::default()
         }
     }
@@ -289,6 +327,9 @@ mod tests {
             training_batch_size: 4,
             consistency_coef: 2.0,
             is_twoplayer: false,
+            network_type: crate::mz_config::NetworkType::Linear,
+            obs_dim: 4,
+            action_space: 2,
             ..Default::default()
         };
         let device = NdArrayDevice::default();

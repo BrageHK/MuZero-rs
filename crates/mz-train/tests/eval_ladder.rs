@@ -97,7 +97,10 @@ fn eval_only_runs_on_the_interval() {
 
 #[test]
 fn single_player_environments_have_no_ladder() {
-    let mz_conf = MuZeroConfig::default();
-    assert!(matches!(mz_conf.environment, EnvironmentName::CartPole));
+    let mz_conf = MuZeroConfig {
+        environment: EnvironmentName::CartPole,
+        is_twoplayer: false,
+        ..Default::default()
+    };
     assert!(!EloLadder::new(&mz_conf).enabled());
 }

@@ -266,6 +266,10 @@ pub struct MuZeroConfig {
     // rayon with_min_len chunk size: batches smaller than this run serially.
     pub rayon_min_chunk_len: usize,
 
+    // Run self-play and network training on two threads instead of one loop.
+    #[serde(default)]
+    pub async_training: bool,
+
     // None => random init
     #[serde(default)]
     pub init_checkpoint: Option<String>,
@@ -478,6 +482,19 @@ fn get_conf(file_content: String) -> MuZeroConfig {
         conf.obs_dim = info.obs_dim();
         conf.is_twoplayer = info.num_players > 1;
     });
+    if let ResNet = conf.network_type {
+        let channels = conf.resnet().obs_channels;
+        assert_eq!(
+            channels * conf.board_height * conf.board_width,
+            conf.obs_dim,
+            "resnet.obs_channels ({}) x {}x{} does not match the {} observation ({} floats)",
+            channels,
+            conf.board_height,
+            conf.board_width,
+            conf.environment.as_ref(),
+            conf.obs_dim,
+        );
+    }
     conf
 }
 
