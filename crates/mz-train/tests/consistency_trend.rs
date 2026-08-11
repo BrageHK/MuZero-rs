@@ -81,6 +81,7 @@ fn consistency_improves_without_collapsing() {
             &mz_conf,
             &mut buffer,
             None,
+            None,
             mz_conf.learning_rate,
             &device,
         );

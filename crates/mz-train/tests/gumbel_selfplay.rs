@@ -113,6 +113,7 @@ fn run_loop(mz_conf: &MuZeroConfig, iterations: usize) -> (Vec<f32>, Vec<usize>)
             mz_conf,
             &mut buffer,
             None,
+            None,
             mz_conf.learning_rate,
             &device,
         );

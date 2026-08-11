@@ -19,6 +19,7 @@ use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;
 
 use crate::augment::Augmenter;
+use crate::board_symmetry::BoardSymmetry;
 use crate::env::Environment;
 use crate::eval::{EloLadder, EvalReading};
 use crate::mz_config::{MuZeroConfig, SearchAlgorithm};
@@ -55,6 +56,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
     mut optimizer: AnyOptimizer<TrainB, NT>,
     mut buffer: ReplayBuffer,
     mut augmenter: Option<Augmenter>,
+    mut board_sym: Option<BoardSymmetry>,
     mut tui: TrainingTui,
     train_device: TrainB::Device,
     inner_device: TrainB::Device,
@@ -92,6 +94,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
             &mut optimizer,
             &mut buffer,
             &mut augmenter,
+            &mut board_sym,
             &mut tui,
             &train_device,
             &inner_device,
@@ -218,6 +221,7 @@ fn train_loop<TrainB, N>(
     optimizer: &mut AnyOptimizer<TrainB, N>,
     buffer: &mut ReplayBuffer,
     augmenter: &mut Option<Augmenter>,
+    board_sym: &mut Option<BoardSymmetry>,
     tui: &mut TrainingTui,
     train_device: &TrainB::Device,
     inner_device: &TrainB::Device,
@@ -258,7 +262,14 @@ fn train_loop<TrainB, N>(
             mz_conf,
             buffer,
             augmenter.as_mut(),
-            lr_for_step(mz_conf.learning_rate, mz_conf.lr_warmup_steps, training_step),
+            board_sym.as_mut(),
+            lr_for_step(
+                mz_conf.learning_rate,
+                mz_conf.lr_warmup_steps,
+                mz_conf.lr_decay_rate,
+                mz_conf.lr_decay_steps,
+                training_step,
+            ),
             train_device,
         );
 

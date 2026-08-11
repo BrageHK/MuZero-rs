@@ -17,6 +17,7 @@ use mz_rs::search::batched_search;
 use mz_rs::train::{reanalyze, reanalyze_due, train};
 use mz_rs::tui_metrics::TrainingTui;
 use mz_rs::augment::Augmenter;
+use mz_rs::board_symmetry::BoardSymmetry;
 use mz_rs::utils::{lr_for_step, save_buffer, select_device, tau_for_step};
 use mz_rs::{with_env, with_net};
 
@@ -63,7 +64,7 @@ fn run<E, TrainB, InferB, NT, NI>(
     let mut optimizer = AnyOptimizer::<TrainB, NT>::new(mz_conf);
     if let Some(ckpt) = &mz_conf.init_checkpoint {
         let opt_path = std::path::Path::new(ckpt).with_file_name("optimizer");
-        match CompactRecorder::new().load(opt_path.clone(), &train_device) {
+        match CompactRecorder::new().load(opt_path.clone(), &inner_device) {
             Ok(record) => optimizer = optimizer.load_record(record),
             Err(e) => eprintln!("No optimizer state loaded from {opt_path:?}: {e}"),
         }
@@ -71,6 +72,7 @@ fn run<E, TrainB, InferB, NT, NI>(
 
     let mut buffer = ReplayBuffer::new(mz_conf);
     let mut augmenter = Augmenter::from_config(mz_conf);
+    let mut board_sym = BoardSymmetry::from_config(mz_conf);
     let mut tui = TrainingTui::new(mz_conf);
 
     let training_steps_per_iteration = ((mz_conf.game_batch_size as f32
@@ -89,6 +91,7 @@ fn run<E, TrainB, InferB, NT, NI>(
             optimizer,
             buffer,
             augmenter,
+            board_sym,
             tui,
             train_device,
             inner_device,
@@ -195,7 +198,14 @@ fn run<E, TrainB, InferB, NT, NI>(
                 mz_conf,
                 &mut buffer,
                 augmenter.as_mut(),
-                lr_for_step(mz_conf.learning_rate, mz_conf.lr_warmup_steps, training_step),
+                board_sym.as_mut(),
+                lr_for_step(
+                    mz_conf.learning_rate,
+                    mz_conf.lr_warmup_steps,
+                    mz_conf.lr_decay_rate,
+                    mz_conf.lr_decay_steps,
+                    training_step,
+                ),
                 &train_device,
             );
             if let Some(metrics) = metrics {

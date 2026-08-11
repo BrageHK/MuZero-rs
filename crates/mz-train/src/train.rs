@@ -3,7 +3,8 @@ use burn::{
 };
 
 use crate::{
-    augment::Augmenter, mz_config::MuZeroConfig, networks::{MuZeroNets, scale_hidden_state},
+    augment::Augmenter, board_symmetry::BoardSymmetry, mz_config::MuZeroConfig,
+    networks::{MuZeroNets, scale_hidden_state},
     replay_buffer::{BufferData, ReplayBuffer}, search::batched_search, support::two_hot_batch,
 };
 
@@ -19,6 +20,7 @@ pub fn train<B: AutodiffBackend, N, O>(
     mz_conf: &MuZeroConfig,
     buffer: &mut ReplayBuffer,
     mut augmenter: Option<&mut Augmenter>,
+    mut board_sym: Option<&mut BoardSymmetry>,
     lr: f64,
     device: &B::Device,
 ) -> (N, Option<TrainMetrics>)
@@ -30,9 +32,16 @@ where
         return (agent, None);
     }
 
-    let sequence = buffer.sample_games(mz_conf);
+    let mut sequence = buffer.sample_games(mz_conf);
+    if let Some(sym) = board_sym.as_deref_mut() {
+        for game in sequence.iter_mut() {
+            let choice = sym.sample();
+            sym.apply_game(game, choice);
+        }
+    }
     let support_size = mz_conf.support_size;
     let support_len = mz_conf.support_len();
+    let categorical = mz_conf.categorical();
     let batch = sequence.len();
     let obs_dim = mz_conf.obs_dim;
     let unroll_steps = mz_conf.unroll_steps;
@@ -77,12 +86,7 @@ where
     for step in 0..unroll_steps {
         let mask = masks[step].clone();
 
-        let target_value: Vec<f32> = sequence.iter().map(|game| game[step].value).collect();
-        let target_value = Tensor::<B, 1>::from_floats(
-            two_hot_batch(&target_value, support_size).as_slice(),
-            device,
-        )
-        .reshape([batch, support_len]);
+        let target_value_raw: Vec<f32> = sequence.iter().map(|game| game[step].value).collect();
 
         let target_policy: Vec<Tensor<B, 2>> = sequence
             .iter()
@@ -120,10 +124,22 @@ where
             1.0 / (unroll_steps as f32 - 1.0).max(1.0)
         };
 
-        let value_loss = masked_mean(
-            -(target_value * log_softmax(value, 1)).sum_dim(1),
-            mask.clone(),
-        ) * (step_scale * mz_conf.value_coef);
+        let value_loss = if categorical {
+            let target_value = Tensor::<B, 1>::from_floats(
+                two_hot_batch(&target_value_raw, support_size).as_slice(),
+                device,
+            )
+            .reshape([batch, support_len]);
+            masked_mean(
+                -(target_value * log_softmax(value, 1)).sum_dim(1),
+                mask.clone(),
+            )
+        } else {
+            let target_value =
+                Tensor::<B, 1>::from_floats(target_value_raw.as_slice(), device).reshape([batch, 1]);
+            let diff = value - target_value;
+            masked_mean((diff.clone() * diff).sum_dim(1), mask.clone())
+        } * (step_scale * mz_conf.value_coef);
         let policy_loss = masked_mean(
             -(target_policy * log_softmax(policy, 1)).sum_dim(1),
             mask.clone(),
@@ -131,19 +147,24 @@ where
         loss = loss + value_loss + policy_loss;
 
         if step > 0 {
-            let reward_mask = masks[step - 1].clone();
-            let target_reward: Vec<f32> =
-                sequence.iter().map(|game| game[step - 1].reward).collect();
-            let target_reward = Tensor::<B, 1>::from_floats(
-                two_hot_batch(&target_reward, support_size).as_slice(),
-                device,
-            )
-            .reshape([batch, support_len]);
-            let reward_loss = masked_mean(
-                -(target_reward * log_softmax(reward, 1)).sum_dim(1),
-                reward_mask,
-            ) * (step_scale * mz_conf.reward_coef);
-            loss = loss + reward_loss;
+            // Board games (paper App. F/G: l^r=0) omit the reward loss entirely —
+            // reward is 0 except at the terminal step, which the value target
+            // already bootstraps to.
+            if categorical {
+                let reward_mask = masks[step - 1].clone();
+                let target_reward: Vec<f32> =
+                    sequence.iter().map(|game| game[step - 1].reward).collect();
+                let target_reward = Tensor::<B, 1>::from_floats(
+                    two_hot_batch(&target_reward, support_size).as_slice(),
+                    device,
+                )
+                .reshape([batch, support_len]);
+                let reward_loss = masked_mean(
+                    -(target_reward * log_softmax(reward, 1)).sum_dim(1),
+                    reward_mask,
+                ) * (step_scale * mz_conf.reward_coef);
+                loss = loss + reward_loss;
+            }
 
             if let Some(targets) = &target_projection {
                 let start = (step - 1) * batch;
@@ -282,6 +303,7 @@ mod tests {
             conf,
             &mut buffer,
             None,
+            None,
             conf.learning_rate,
             &device,
         );
@@ -360,6 +382,7 @@ mod tests {
             &conf,
             &mut buffer,
             None,
+            None,
             conf.learning_rate,
             &device,
         );
@@ -367,6 +390,67 @@ mod tests {
         assert!(
             metrics.total.is_finite() && metrics.consistency.is_finite(),
             "masked-out steps must not produce NaN: {metrics:?}"
+        );
+    }
+
+    fn board_game_config(reward_coef: f32) -> MuZeroConfig {
+        MuZeroConfig {
+            training_batch_size: 4,
+            is_twoplayer: true,
+            obs_dim: 4,
+            action_space: 2,
+            reward_coef,
+            consistency_coef: 0.0,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn board_game_uses_scalar_heads() {
+        let conf = board_game_config(1.0);
+        let device = NdArrayDevice::default();
+        let agent: MlpNets<TestB> = conf.init(&device);
+
+        let obs = Tensor::<TestB, 1>::from_floats([0.1, -0.2, 0.3, 0.05], &device).reshape([1, 4]);
+        let hidden = agent.represent(obs);
+        let (value, _policy) = agent.predict(hidden.clone());
+        assert_eq!(
+            value.dims()[1],
+            1,
+            "board games should have a scalar (width-1) value head"
+        );
+
+        let action = Tensor::<TestB, 1, Int>::from_data([0i64].as_slice(), &device);
+        let (_new_hidden, reward) = agent.dynamics(hidden, action, conf.action_space);
+        assert_eq!(
+            reward.dims()[1],
+            1,
+            "board games should have a scalar (width-1) reward head"
+        );
+    }
+
+    #[test]
+    fn board_game_selfplay_produces_finite_loss() {
+        let conf = board_game_config(1.0);
+        let (metrics, _, _) = run_step(&conf);
+
+        assert!(metrics.total.is_finite(), "total loss {} not finite", metrics.total);
+    }
+
+    #[test]
+    fn board_game_ignores_reward_coef() {
+        // A huge reward_coef would dominate the loss if the reward loss were
+        // still being computed (just re-weighted) instead of omitted entirely
+        // for board games (paper App. F/G, l^r=0). A bounded, finite loss here
+        // proves the reward head's output never reaches the loss at all.
+        let conf = MuZeroConfig { reward_coef: 1e6, ..board_game_config(1e6) };
+        let (metrics, _, _) = run_step(&conf);
+
+        assert!(metrics.total.is_finite(), "total loss {} not finite", metrics.total);
+        assert!(
+            metrics.total.abs() < 100.0,
+            "loss {} suggests reward_coef is still contributing to board-game loss",
+            metrics.total
         );
     }
 }

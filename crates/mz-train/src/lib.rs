@@ -1,5 +1,6 @@
 pub mod async_train;
 pub mod augment;
+pub mod board_symmetry;
 pub mod env;
 pub mod eval;
 pub mod mz_config;

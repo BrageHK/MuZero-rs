@@ -82,16 +82,19 @@ pub struct OthelloState {
 }
 
 impl OthelloState {
-    /// Observation vector: 1.0 for the mover's stones, -1.0 for the opponent's, 0.0 empty.
-    pub fn to_obs(self) -> [f64; 64] {
-        let mut obs = [0.0; 64];
+    /// Three 64-cell planes, in order: mover's stones, opponent's stones, empty
+    /// squares. Each cell is 1.0/0.0.
+    pub fn to_obs(self) -> [f64; 192] {
+        let mut obs = [0.0; 192];
         let mut i = 0;
         while i < 64 {
             let bit = 1 << i;
             if self.own & bit != 0 {
                 obs[i] = 1.0;
             } else if self.opp & bit != 0 {
-                obs[i] = -1.0;
+                obs[64 + i] = 1.0;
+            } else {
+                obs[128 + i] = 1.0;
             }
             i += 1;
         }

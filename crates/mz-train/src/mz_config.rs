@@ -234,6 +234,10 @@ pub struct MuZeroConfig {
 
     #[serde(default)]
     pub lr_warmup_steps: usize,
+    #[serde(default = "default_lr_decay_rate")]
+    pub lr_decay_rate: f64,
+    #[serde(default = "default_lr_decay_steps")]
+    pub lr_decay_steps: usize,
 
     #[serde(default)]
     pub search_algorithm: SearchAlgorithm,
@@ -291,6 +295,8 @@ pub struct MuZeroConfig {
     pub board_height: usize,
     #[serde(default)]
     pub board_width: usize,
+    #[serde(default)]
+    pub obs_channels: usize,
 }
 
 fn default_avg_window() -> usize {
@@ -311,6 +317,14 @@ fn default_support_size() -> usize {
 
 fn default_value_coef() -> f32 {
     0.25
+}
+
+fn default_lr_decay_rate() -> f64 {
+    1.0
+}
+
+fn default_lr_decay_steps() -> usize {
+    350_000
 }
 
 fn default_unit_coef() -> f32 {
@@ -352,6 +366,11 @@ fn validate(conf: &MuZeroConfig) {
         conf.learning_rate > 0.0,
         "learning_rate must be > 0, got {}",
         conf.learning_rate
+    );
+    assert!(
+        conf.lr_decay_rate > 0.0,
+        "lr_decay_rate must be > 0, got {}",
+        conf.lr_decay_rate
     );
     assert!(
         conf.weight_decay >= 0.0 && conf.weight_decay < 1.0,
@@ -476,25 +495,13 @@ fn get_conf(file_content: String) -> MuZeroConfig {
                 }
                 conf.board_height = shape[shape.len() - 2];
                 conf.board_width = shape[shape.len() - 1];
+                conf.obs_channels = shape[..shape.len() - 2].iter().product::<usize>().max(1);
             },
         };
         conf.action_space = info.action_size;
         conf.obs_dim = info.obs_dim();
         conf.is_twoplayer = info.num_players > 1;
     });
-    if let ResNet = conf.network_type {
-        let channels = conf.resnet().obs_channels;
-        assert_eq!(
-            channels * conf.board_height * conf.board_width,
-            conf.obs_dim,
-            "resnet.obs_channels ({}) x {}x{} does not match the {} observation ({} floats)",
-            channels,
-            conf.board_height,
-            conf.board_width,
-            conf.environment.as_ref(),
-            conf.obs_dim,
-        );
-    }
     conf
 }
 
@@ -531,6 +538,20 @@ impl MuZeroConfig {
         crate::support::support_len(self.support_size)
     }
 
+    /// Board games (2-player) use a plain scalar value head and no reward loss
+    /// (paper App. F/G: l^v=(z-q)^2, l^r=0). Single-player envs (CartPole, Atari)
+    /// use the categorical support for both.
+    pub fn categorical(&self) -> bool {
+        !self.is_twoplayer
+    }
+
+    /// Board games on a square board (Othello, TicTacToe) are invariant under
+    /// the 8-cell dihedral group; the replay buffer samples a random rotation/
+    /// reflection per game to multiply effective self-play data.
+    pub fn board_symmetric(&self) -> bool {
+        self.is_twoplayer && self.board_height > 0 && self.board_height == self.board_width
+    }
+
     /// The subset of the config that shapes the networks; the only part `mz-web`
     /// needs to rebuild the same modules for the trained weights.
     pub fn net_config(&self) -> NetConfig {
@@ -539,8 +560,10 @@ impl MuZeroConfig {
             obs_dim: self.obs_dim,
             action_space: self.action_space,
             support_size: self.support_size,
+            categorical: self.categorical(),
             board_height: self.board_height,
             board_width: self.board_width,
+            obs_channels: self.obs_channels,
             linear: self.linear.clone(),
             resnet: self.resnet.clone(),
             projection: self.projection.clone(),

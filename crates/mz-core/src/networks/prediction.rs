@@ -18,7 +18,8 @@ pub struct PredictionModel<B: Backend> {
 
 impl<B: Backend> PredictionModel<B> {
     /// Returns (value_logits, policy_logits). value_logits is a categorical
-    /// distribution over the value support (see `support`).
+    /// distribution over the value support (see `support`) for single-player
+    /// envs, or a plain scalar column (width 1) for board games.
     pub fn forward(&self, hidden: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         let mut x = hidden;
         for layer in &self.backbone {

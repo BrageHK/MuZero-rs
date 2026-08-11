@@ -14,8 +14,10 @@ use burn::{
 
 use crate::config::NetConfig;
 
-/// (hidden_state, reward_logits, value_logits, policy_logits). reward_logits and
-/// value_logits are categorical distributions over the support (see `support`).
+/// (hidden_state, reward_logits, value_logits, policy_logits). For single-player
+/// envs, reward_logits and value_logits are categorical distributions over the
+/// support (see `support`); for board games (`NetConfig.categorical == false`)
+/// they are a plain scalar column (width 1) instead.
 /// policy_logits are unnormalized; apply softmax at the use site.
 pub type MuZeroOutput<B> = (Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>);
 
@@ -48,7 +50,8 @@ pub trait MuZeroNets<B: Backend>: Module<B> + Sized {
     fn predict_projection(&self, projection: Tensor<B, 2>) -> Tensor<B, 2>;
 
     /// returns (hidden_state, reward_logits, value_logits, policy_logits). reward is a
-    /// zero distribution at the root (softmax of zeros decodes to scalar 0).
+    /// zero distribution at the root (softmax of zeros decodes to scalar 0), or a
+    /// literal 0.0 in scalar mode (board games).
     fn initial_inference(&self, obs: Tensor<B, 2>) -> MuZeroOutput<B> {
         let hidden_state = scale_hidden_state(self.represent(obs));
         let (value, policy) = self.predict(hidden_state.clone());
