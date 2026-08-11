@@ -6,9 +6,9 @@ use burn::record::{CompactRecorder, Recorder};
 use burn::tensor::Tensor;
 use burn::tensor::backend::Backend;
 use burn::{Dispatch, DispatchDevice};
-use mz_rs::env::Environment;
 
-use mz_rs::agent::MlpNets;
+use mz_rs::env::Environment;
+use mz_rs::agent::AnyNets;
 use mz_rs::mz_config::{MuZeroConfig, SearchAlgorithm};
 use mz_rs::networks::nets_to_backend;
 use mz_rs::optim::AnyOptimizer;
@@ -36,8 +36,8 @@ fn main() {
     let train_device = DispatchDevice::autodiff(device.clone());
     let infer_device = select_device(mz_conf.inference_backend);
 
-    let mut agent: MlpNets<TrainB> = mz_conf.init_agent(&train_device);
-    let mut optimizer = AnyOptimizer::<TrainB, MlpNets<TrainB>>::new(&mz_conf);
+    let mut agent: AnyNets<TrainB> = mz_conf.init_agent(&train_device);
+    let mut optimizer = AnyOptimizer::<TrainB, AnyNets<TrainB>>::new(&mz_conf);
     if let Some(ckpt) = &mz_conf.init_checkpoint {
         let opt_path = std::path::Path::new(ckpt).with_file_name("optimizer");
         match CompactRecorder::new().load(opt_path.clone(), &device) {
@@ -45,7 +45,7 @@ fn main() {
             Err(e) => eprintln!("No optimizer state loaded from {opt_path:?}: {e}"),
         }
     }
-    let mut inference_agent: MlpNets<InferB> =
+    let mut inference_agent: AnyNets<InferB> =
         nets_to_backend(&agent.valid(), &mz_conf, &infer_device);
 
     let mut buffer = ReplayBuffer::new(&mz_conf);
@@ -200,7 +200,7 @@ fn reanalyze<InferB: Backend>(
     buffer: &mut ReplayBuffer,
     training_step: usize,
     infer_device: &InferB::Device,
-    inference_agent: &MlpNets<InferB>,
+    inference_agent: &AnyNets<InferB>,
 ) {
     if rand::random::<f32>() < mz_conf.reanalyze_fraction {
         let idxs = buffer.sample_reanalyze_indices(mz_conf.reanalyze_batch_size, training_step);
