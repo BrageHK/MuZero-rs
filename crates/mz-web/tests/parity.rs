@@ -8,7 +8,7 @@
 
 use burn::backend::NdArray;
 use burn::backend::ndarray::NdArrayDevice;
-use mz_core::agent::MlpNets;
+use mz_core::networks::mlp::MlpNets;
 use mz_core::othello::Othello;
 use mz_rs::env::Environment;
 use mz_rs::mz_config::{GumbelSubConfig, MuZeroConfig, SearchAlgorithm};

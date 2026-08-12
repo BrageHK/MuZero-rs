@@ -12,9 +12,9 @@
 use burn::Dispatch;
 use burn::tensor::{Distribution, Tensor};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use mz_rs::agent::MlpNets;
 use mz_rs::mz_config::{MuZeroConfig, NetworkType};
 use mz_rs::networks::MuZeroNets;
+use mz_rs::networks::mlp::MlpNets;
 use mz_rs::networks::resnet::ResNets;
 use mz_rs::search::batched_search;
 use mz_rs::utils::select_device;

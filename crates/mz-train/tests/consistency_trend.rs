@@ -4,10 +4,10 @@ use burn::backend::ndarray::NdArrayDevice;
 use burn::backend::{Autodiff, NdArray};
 use burn::module::AutodiffModule;
 
-use mz_rs::agent::MlpNets;
 use mz_rs::env::Environment;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
 use mz_rs::mz_config::{GumbelSubConfig, MuZeroConfig, NetworkType, SearchAlgorithm};
+use mz_rs::networks::mlp::MlpNets;
 use mz_rs::networks::nets_to_backend;
 use mz_rs::optim::AnyOptimizer;
 use mz_rs::replay_buffer::{BufferData, ReplayBuffer};

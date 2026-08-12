@@ -1,3 +1,8 @@
+pub mod dynamic;
+pub mod prediction;
+pub mod projection;
+pub mod representation;
+
 use burn::{
     Tensor,
     module::Module,
@@ -6,10 +11,10 @@ use burn::{
 
 use crate::config::NetConfig;
 use crate::networks::MuZeroNets;
-use crate::networks::{
+use crate::networks::mlp::{
     dynamic::{DynamicModelConfig, DynamicModelMLP},
     prediction::{PredictionModel, PredictionModelConfig},
-    projector::{MlpProjection, MlpProjectionConfig},
+    projection::{MlpProjection, MlpProjectionConfig},
     representation::{RepresentationModel, RepresentationModelConfig},
 };
 

@@ -10,8 +10,8 @@ use std::path::Path;
 use burn::backend::NdArray;
 use burn::module::Module;
 use burn::record::{BinFileRecorder, CompactRecorder, HalfPrecisionSettings, Recorder};
-use mz_rs::agent::MlpNets;
 use mz_rs::mz_config::{EnvironmentName, MuZeroConfig, SearchAlgorithm};
+use mz_rs::networks::mlp::MlpNets;
 
 type B = NdArray;
 

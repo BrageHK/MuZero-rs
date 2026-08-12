@@ -1,11 +1,11 @@
 use burn::module::Module;
 use burn::record::{BinBytesRecorder, HalfPrecisionSettings, Recorder};
 use burn::tensor::backend::BackendTypes;
-use mz_core::agent::MlpNets;
 use mz_core::config::{
     LinearSubConfig, NetConfig, NetworkSubConfig, NetworkType, ProjectionSubConfig,
 };
 use mz_core::networks::MuZeroNets;
+use mz_core::networks::mlp::MlpNets;
 
 use crate::search::SearchParams;
 

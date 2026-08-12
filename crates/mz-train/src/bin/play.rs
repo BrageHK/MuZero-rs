@@ -12,7 +12,7 @@ use mz_rs::env::othello::env::{Othello, PASS};
 use mz_rs::env::tictactoe::env::TicTacToe;
 use mz_rs::mz_config::{EnvironmentName, MuZeroConfig};
 use mz_rs::utils::select_device;
-use mz_rs::{agent::MlpNets, search::batched_search};
+use mz_rs::{networks::mlp::MlpNets, search::batched_search};
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::*;
 

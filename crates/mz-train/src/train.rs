@@ -251,7 +251,7 @@ mod tests {
     use burn::backend::{Autodiff, NdArray, ndarray::NdArrayDevice};
 
     use super::*;
-    use crate::agent::MlpNets;
+    use crate::networks::mlp::MlpNets;
     use crate::optim::AnyOptimizer;
     use crate::replay_buffer::BufferData;
 

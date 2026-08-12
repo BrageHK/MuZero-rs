@@ -832,8 +832,8 @@ fn root_priors(logits: &[f32], mask: Option<&[bool]>, alpha: f32, frac: f32) -> 
 #[cfg(all(test, feature = "ndarray"))]
 mod tests {
     use super::*;
-    use crate::agent::MlpNets;
     use crate::mz_config::{GumbelSubConfig, PuctSubConfig, TemperatureSchedule};
+    use crate::networks::mlp::MlpNets;
     use burn::backend::NdArray;
 
     fn puct_conf() -> MuZeroConfig {

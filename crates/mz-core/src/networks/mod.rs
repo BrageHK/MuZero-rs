@@ -1,8 +1,4 @@
-pub mod dynamic;
-pub mod prediction;
-pub mod projector;
-pub mod representation;
-pub mod resblock;
+pub mod mlp;
 pub mod resnet;
 
 use burn::{
