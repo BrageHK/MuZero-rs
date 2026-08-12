@@ -262,8 +262,7 @@ fn eval_games<B: Backend, N: MuZeroNets<B>, E: BoardGame>(
             data.extend(games[i].env.obs());
             masks.push(games[i].env.legal_mask());
         }
-        let obs =
-            Tensor::<B, 1>::from_floats(data.as_slice(), device).reshape([active.len(), dim]);
+        let obs = Tensor::<B, 1>::from_floats(data.as_slice(), device).reshape([active.len(), dim]);
         let results = batched_search(obs, Some(&masks), mz_conf, agent, 0.0, false);
 
         for (&i, result) in active.iter().zip(results.iter()) {

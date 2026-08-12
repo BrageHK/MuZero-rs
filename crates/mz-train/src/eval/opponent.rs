@@ -29,7 +29,10 @@ impl Opponent {
 
     pub fn choose<E: BoardGame>(&self, env: &E, rng: &mut fastrand::Rng) -> usize {
         let legal = legal_actions(&env.legal_mask());
-        assert!(!legal.is_empty(), "opponent asked to move with no legal action");
+        assert!(
+            !legal.is_empty(),
+            "opponent asked to move with no legal action"
+        );
 
         match self {
             Opponent::Random => legal[rng.usize(..legal.len())],

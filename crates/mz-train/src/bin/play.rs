@@ -5,11 +5,11 @@ use burn::Dispatch;
 use burn::tensor::backend::Backend;
 use gif::{Encoder, Frame, Repeat};
 use gym_rs::utils::renderer::{RenderColor, RenderFrame, RenderMode};
+use mz_rs::env::Environment;
 use mz_rs::env::atari::env::AtariEnv;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
 use mz_rs::env::othello::env::{Othello, PASS};
 use mz_rs::env::tictactoe::env::TicTacToe;
-use mz_rs::env::Environment;
 use mz_rs::mz_config::{EnvironmentName, MuZeroConfig};
 use mz_rs::utils::select_device;
 use mz_rs::{agent::MlpNets, search::batched_search};
@@ -120,8 +120,14 @@ fn play_two_player<B: Backend, E: Playable>(
             read_human_action::<E>(&mask)
         } else {
             let obs = env.state_tensor::<B>(device);
-            let results =
-                batched_search(obs, Some(std::slice::from_ref(&mask)), mz_conf, agent, 1.0, false);
+            let results = batched_search(
+                obs,
+                Some(std::slice::from_ref(&mask)),
+                mz_conf,
+                agent,
+                1.0,
+                false,
+            );
             let result = &results[0];
             print!("Search distribution:");
             for (a, &p) in result.distribution.iter().enumerate() {
@@ -199,8 +205,14 @@ fn play_atari<B: Backend>(mz_conf: &MuZeroConfig, agent: &MlpNets<B>, device: &B
         frames.push(env.rgb_frame());
         let obs = env.state_tensor::<B>(device);
         let mask = env.legal_mask();
-        let results =
-            batched_search(obs, Some(std::slice::from_ref(&mask)), mz_conf, agent, 0.10, false);
+        let results = batched_search(
+            obs,
+            Some(std::slice::from_ref(&mask)),
+            mz_conf,
+            agent,
+            0.10,
+            false,
+        );
         let action = WeightedIndex::new(&results[0].distribution)
             .unwrap()
             .sample(&mut rng);
@@ -285,8 +297,8 @@ fn main() {
         puct.root_exploration_fraction = 0.0;
     }
     assert!(
-        mz_conf.init_checkpoint.is_some(),
-        "Set init_checkpoint in config.yaml (e.g. \"model/TicTacToe/latest\") to play a trained model"
+        mz_conf.load_from_checkpoint,
+        "Set load_from_checkpoint: true in config.yaml to play a trained model"
     );
 
     let device = select_device(mz_conf.inference_backend);

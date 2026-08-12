@@ -1,11 +1,23 @@
 use burn::{
-    module::AutodiffModule,  optim::{GradientsParams, Optimizer}, tensor::{Int, Tensor, activation::log_softmax, backend::{AutodiffBackend, Backend}, cast::ToElement, linalg::cosine_similarity},
+    module::AutodiffModule,
+    optim::{GradientsParams, Optimizer},
+    tensor::{
+        Int, Tensor,
+        activation::log_softmax,
+        backend::{AutodiffBackend, Backend},
+        cast::ToElement,
+        linalg::cosine_similarity,
+    },
 };
 
 use crate::{
-    augment::Augmenter, board_symmetry::BoardSymmetry, mz_config::MuZeroConfig,
+    augment::Augmenter,
+    board_symmetry::BoardSymmetry,
+    mz_config::MuZeroConfig,
     networks::{MuZeroNets, scale_hidden_state},
-    replay_buffer::{BufferData, ReplayBuffer}, search::batched_search, support::two_hot_batch,
+    replay_buffer::{BufferData, ReplayBuffer},
+    search::batched_search,
+    support::two_hot_batch,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -90,7 +102,9 @@ where
 
         let target_policy: Vec<Tensor<B, 2>> = sequence
             .iter()
-            .map(|game| Tensor::<B, 1>::from_floats(game[step].policy.as_slice(), device).unsqueeze())
+            .map(|game| {
+                Tensor::<B, 1>::from_floats(game[step].policy.as_slice(), device).unsqueeze()
+            })
             .collect();
         let target_policy = Tensor::cat(target_policy, 0);
 
@@ -135,8 +149,8 @@ where
                 mask.clone(),
             )
         } else {
-            let target_value =
-                Tensor::<B, 1>::from_floats(target_value_raw.as_slice(), device).reshape([batch, 1]);
+            let target_value = Tensor::<B, 1>::from_floats(target_value_raw.as_slice(), device)
+                .reshape([batch, 1]);
             let diff = value - target_value;
             masked_mean((diff.clone() * diff).sum_dim(1), mask.clone())
         } * (step_scale * mz_conf.value_coef);
@@ -169,11 +183,10 @@ where
             if let Some(targets) = &target_projection {
                 let start = (step - 1) * batch;
                 let target = targets.clone().narrow(0, start, batch);
-                let online =
-                    agent.predict_projection(agent.project(new_hidden_state.clone()));
+                let online = agent.predict_projection(agent.project(new_hidden_state.clone()));
                 let similarity = cosine_similarity(online, target, 1, None);
-                let consistency_loss = -masked_mean(similarity, mask)
-                    * (step_scale * mz_conf.consistency_coef);
+                let consistency_loss =
+                    -masked_mean(similarity, mask) * (step_scale * mz_conf.consistency_coef);
                 consistency_total = consistency_total + consistency_loss.clone();
                 loss = loss + consistency_loss;
             }
@@ -309,7 +322,11 @@ mod tests {
         );
         let after = probe(&agent, &device);
 
-        (metrics.expect("a training step should have run"), before, after)
+        (
+            metrics.expect("a training step should have run"),
+            before,
+            after,
+        )
     }
 
     #[test]
@@ -317,7 +334,11 @@ mod tests {
         let conf = config(2.0);
         let (metrics, before, after) = run_step(&conf);
 
-        assert!(metrics.total.is_finite(), "total loss {} not finite", metrics.total);
+        assert!(
+            metrics.total.is_finite(),
+            "total loss {} not finite",
+            metrics.total
+        );
         assert!(
             metrics.consistency.is_finite() && metrics.consistency != 0.0,
             "consistency term should be active, got {}",
@@ -434,7 +455,11 @@ mod tests {
         let conf = board_game_config(1.0);
         let (metrics, _, _) = run_step(&conf);
 
-        assert!(metrics.total.is_finite(), "total loss {} not finite", metrics.total);
+        assert!(
+            metrics.total.is_finite(),
+            "total loss {} not finite",
+            metrics.total
+        );
     }
 
     #[test]
@@ -443,10 +468,17 @@ mod tests {
         // still being computed (just re-weighted) instead of omitted entirely
         // for board games (paper App. F/G, l^r=0). A bounded, finite loss here
         // proves the reward head's output never reaches the loss at all.
-        let conf = MuZeroConfig { reward_coef: 1e6, ..board_game_config(1e6) };
+        let conf = MuZeroConfig {
+            reward_coef: 1e6,
+            ..board_game_config(1e6)
+        };
         let (metrics, _, _) = run_step(&conf);
 
-        assert!(metrics.total.is_finite(), "total loss {} not finite", metrics.total);
+        assert!(
+            metrics.total.is_finite(),
+            "total loss {} not finite",
+            metrics.total
+        );
         assert!(
             metrics.total.abs() < 100.0,
             "loss {} suggests reward_coef is still contributing to board-game loss",

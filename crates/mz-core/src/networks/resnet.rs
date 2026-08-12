@@ -183,7 +183,8 @@ impl ResNetConfig {
                 reward_conv: conv1x1(c, 1, device),
                 reward_bn: BatchNormConfig::new(1).init(device),
                 reward_fc1: LinearConfig::new(h * w, self.fc_hidden_size).init(device),
-                reward_fc2: LinearConfig::new(self.fc_hidden_size, self.reward_support).init(device),
+                reward_fc2: LinearConfig::new(self.fc_hidden_size, self.reward_support)
+                    .init(device),
                 relu: Relu,
             },
             prediction: ResNetPrediction {

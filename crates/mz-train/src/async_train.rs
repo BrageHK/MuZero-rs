@@ -29,7 +29,7 @@ use crate::replay_buffer::{BufferData, ReplayBuffer};
 use crate::search::batched_search;
 use crate::train::{reanalyze, reanalyze_due, train};
 use crate::tui_metrics::TrainingTui;
-use crate::utils::{lr_for_step, save_buffer, tau_for_step};
+use crate::utils::{lr_for_step, save_buffer, save_training_step, tau_for_step};
 
 const RENDER_INTERVAL: Duration = Duration::from_millis(50);
 const WARMUP_POLL: Duration = Duration::from_millis(100);
@@ -61,6 +61,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
     train_device: TrainB::Device,
     inner_device: TrainB::Device,
     infer_device: InferB::Device,
+    initial_training_step: usize,
 ) where
     E: Environment<Action = usize> + Default + Clone,
     TrainB: AutodiffBackend,
@@ -85,6 +86,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
                 game_tx,
                 weight_rx,
                 self_play_interrupter,
+                initial_training_step,
             );
         });
 
@@ -100,6 +102,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
             &inner_device,
             &game_rx,
             &weight_tx,
+            initial_training_step,
         );
 
         interrupter.stop(None);
@@ -115,6 +118,7 @@ fn self_play<E, InferB, N>(
     tx: Sender<SelfPlayMsg>,
     weights: Receiver<WeightMsg>,
     interrupter: Interrupter,
+    initial_training_step: usize,
 ) where
     E: Environment<Action = usize> + Default + Clone,
     InferB: Backend,
@@ -123,7 +127,7 @@ fn self_play<E, InferB, N>(
     let net_conf = mz_conf.net_config();
     let mut agent: N = nets_from_bytes(initial_weights, &net_conf, &infer_device);
     let mut ladder = EloLadder::new(mz_conf);
-    let mut training_step = 0;
+    let mut training_step = initial_training_step;
 
     let mut game_batch: Vec<Vec<BufferData>> = vec![Vec::new(); mz_conf.game_batch_size];
     let mut game_reward_batch = vec![0.0f32; mz_conf.game_batch_size];
@@ -199,7 +203,9 @@ fn self_play<E, InferB, N>(
             }
         }
 
-        if tx.send(SelfPlayMsg::EnvSteps(mz_conf.game_batch_size)).is_err()
+        if tx
+            .send(SelfPlayMsg::EnvSteps(mz_conf.game_batch_size))
+            .is_err()
             || tx.send(SelfPlayMsg::Tau(tau)).is_err()
         {
             return;
@@ -227,13 +233,14 @@ fn train_loop<TrainB, N>(
     inner_device: &TrainB::Device,
     games: &Receiver<SelfPlayMsg>,
     weights: &Sender<WeightMsg>,
+    initial_training_step: usize,
 ) where
     TrainB: AutodiffBackend,
     N: MuZeroNets<TrainB> + AutodiffModule<TrainB>,
     N::InnerModule: MuZeroNets<TrainB::InnerBackend>,
 {
-    let mut training_step = 0;
-    let mut next_checkpoint = mz_conf.checkpoint_interval;
+    let mut training_step = initial_training_step;
+    let mut next_checkpoint = initial_training_step + mz_conf.checkpoint_interval;
     let mut last_render = Instant::now();
 
     while !tui.should_stop() && training_step < mz_conf.training_steps {
@@ -291,7 +298,7 @@ fn train_loop<TrainB, N>(
         }
 
         if mz_conf.checkpoint_interval > 0 && training_step >= next_checkpoint {
-            checkpoint(mz_conf, &agent, optimizer, buffer);
+            checkpoint(mz_conf, &agent, optimizer, buffer, training_step);
             next_checkpoint += mz_conf.checkpoint_interval;
         }
 
@@ -357,11 +364,12 @@ fn checkpoint<TrainB, N>(
     agent: &N,
     optimizer: &AnyOptimizer<TrainB, N>,
     buffer: &ReplayBuffer,
+    training_step: usize,
 ) where
     TrainB: AutodiffBackend,
     N: MuZeroNets<TrainB> + AutodiffModule<TrainB>,
 {
-    let path = "model/".to_owned() + mz_conf.environment.as_ref();
+    let path = mz_conf.checkpoint_dir();
     std::fs::create_dir_all(&path).expect("Failed to create directory");
     agent
         .valid()
@@ -371,4 +379,5 @@ fn checkpoint<TrainB, N>(
         .record(optimizer.to_record(), format!("{path}/optimizer").into())
         .expect("Failed to save optimizer state");
     save_buffer(buffer, &format!("{path}/buffer.mpk"));
+    save_training_step(training_step, &format!("{path}/training_step"));
 }

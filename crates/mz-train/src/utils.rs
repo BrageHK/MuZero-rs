@@ -1,7 +1,12 @@
+use std::collections::VecDeque;
+
 use burn::DispatchDevice;
 use serde::{Deserialize, Serialize};
 
-use crate::{mz_config::TemperatureSchedule, replay_buffer::ReplayBuffer};
+use crate::{
+    mz_config::TemperatureSchedule,
+    replay_buffer::{BufferData, ReplayBuffer},
+};
 
 /// Backend selected at runtime from config. A variant is only available when
 /// the matching cargo feature compiled that backend in (see `[features]` in
@@ -112,9 +117,9 @@ pub struct QNormalization {
 
 impl QNormalization {
     pub fn from_known_bounds(lower: f32, upper: f32) -> Self {
-        QNormalization { 
+        QNormalization {
             q_max: upper,
-            q_min: lower
+            q_min: lower,
         }
     }
 
@@ -144,6 +149,23 @@ impl Default for QNormalization {
 pub fn save_buffer(buffer: &ReplayBuffer, path: &str) {
     let bytes = rmp_serde::to_vec(&buffer.states).expect("Failed to serialize replay buffer");
     std::fs::write(path, bytes).expect("Failed to write replay buffer");
+}
+
+pub fn load_buffer(path: &str) -> VecDeque<BufferData> {
+    let bytes = std::fs::read(path).expect("Failed to read replay buffer");
+    rmp_serde::from_slice(&bytes).expect("Failed to deserialize replay buffer")
+}
+
+pub fn save_training_step(step: usize, path: &str) {
+    std::fs::write(path, step.to_string()).expect("Failed to write training step");
+}
+
+pub fn load_training_step(path: &str) -> usize {
+    std::fs::read_to_string(path)
+        .expect("Failed to read training step")
+        .trim()
+        .parse()
+        .expect("Failed to parse training step")
 }
 
 #[cfg(test)]

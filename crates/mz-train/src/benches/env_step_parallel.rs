@@ -57,11 +57,7 @@ fn build_envs(n: usize) -> Vec<SendEnv> {
         .collect()
 }
 
-fn build_obs(
-    envs: &[SendEnv],
-    obs_dim: usize,
-    device: &burn::DispatchDevice,
-) -> Tensor<B, 2> {
+fn build_obs(envs: &[SendEnv], obs_dim: usize, device: &burn::DispatchDevice) -> Tensor<B, 2> {
     let mut data = Vec::with_capacity(envs.len() * obs_dim);
     for env in envs {
         data.extend(env.obs());
@@ -129,16 +125,17 @@ fn bench_env_step(c: &mut Criterion) {
 
     for n in sizes {
         group.throughput(Throughput::Elements(n as u64));
-        for (name, mode) in [("serial", StepMode::Serial), ("parallel", StepMode::Parallel)] {
+        for (name, mode) in [
+            ("serial", StepMode::Serial),
+            ("parallel", StepMode::Parallel),
+        ] {
             group.bench_with_input(BenchmarkId::new(name, n), &n, |b, &n| {
                 let envs = &mut pool[..n];
                 for env in envs.iter_mut() {
                     env.reset();
                 }
                 one_iter(envs, mode, &mz_conf, &agent, &device, obs_dim);
-                b.iter(|| {
-                    black_box(one_iter(envs, mode, &mz_conf, &agent, &device, obs_dim))
-                });
+                b.iter(|| black_box(one_iter(envs, mode, &mz_conf, &agent, &device, obs_dim)));
             });
         }
     }

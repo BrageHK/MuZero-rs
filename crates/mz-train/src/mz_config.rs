@@ -274,9 +274,10 @@ pub struct MuZeroConfig {
     #[serde(default)]
     pub async_training: bool,
 
-    // None => random init
+    // Resumes networks, optimizer state, replay buffer, and training step from
+    // model/<environment>/. false => random init, fresh buffer, step 0.
     #[serde(default)]
-    pub init_checkpoint: Option<String>,
+    pub load_from_checkpoint: bool,
 
     // Compute backends; a choice must be compiled in via cargo features. See utils::BackendChoice.
     #[serde(default)]
@@ -377,7 +378,10 @@ fn validate(conf: &MuZeroConfig) {
         "weight_decay must be in [0, 1), got {}",
         conf.weight_decay
     );
-    assert!(conf.training_batch_size >= 1, "training_batch_size must be >= 1");
+    assert!(
+        conf.training_batch_size >= 1,
+        "training_batch_size must be >= 1"
+    );
     assert!(conf.game_batch_size >= 1, "game_batch_size must be >= 1");
     assert!(conf.num_simulations >= 1, "num_simulations must be >= 1");
     assert!(conf.unroll_steps >= 1, "unroll_steps must be >= 1");
@@ -442,7 +446,11 @@ fn validate(conf: &MuZeroConfig) {
         );
     }
     if let Some(eval) = conf.eval.as_ref() {
-        assert!(eval.games >= 2, "eval.games must be >= 2, got {}", eval.games);
+        assert!(
+            eval.games >= 2,
+            "eval.games must be >= 2, got {}",
+            eval.games
+        );
         assert!(
             (0.0..=1.0).contains(&eval.promote_score) && (0.0..=1.0).contains(&eval.demote_score),
             "eval promote/demote scores must be in [0, 1]"
@@ -458,7 +466,10 @@ fn validate(conf: &MuZeroConfig) {
                 !default_ladder(&conf.environment).is_empty(),
                 "eval.ladder is only supported for board games (TicTacToe, Othello)"
             );
-            assert!(!ladder.is_empty(), "eval.ladder must have at least one rung");
+            assert!(
+                !ladder.is_empty(),
+                "eval.ladder must have at least one rung"
+            );
             for rung in ladder {
                 if let RungConfig::AlphaBeta { depth, epsilon, .. } = rung {
                     assert!(*depth >= 1, "eval ladder depth must be >= 1, got {depth}");
@@ -575,14 +586,22 @@ impl MuZeroConfig {
         N::init(&self.net_config(), device)
     }
 
-    /// Same as `init`, but loads weights from `init_checkpoint` if set in config.
+    /// Directory holding this environment's checkpoint files: `latest`, `optimizer`,
+    /// `buffer.mpk`, `training_step`.
+    pub fn checkpoint_dir(&self) -> String {
+        format!("model/{}", self.environment.as_ref())
+    }
+
+    /// Same as `init`, but loads weights from the checkpoint dir if `load_from_checkpoint`.
     pub fn init_agent<B: Backend, N: MuZeroNets<B>>(&self, device: &B::Device) -> N {
         let agent: N = self.init(device);
-        match &self.init_checkpoint {
-            Some(path) => agent
-                .load_file(path, &CompactRecorder::new(), device)
-                .unwrap_or_else(|e| panic!("Failed to load init_checkpoint '{path}': {e}")),
-            None => agent,
+        if self.load_from_checkpoint {
+            let path = format!("{}/latest", self.checkpoint_dir());
+            agent
+                .load_file(&path, &CompactRecorder::new(), device)
+                .unwrap_or_else(|e| panic!("Failed to load checkpoint '{path}': {e}"))
+        } else {
+            agent
         }
     }
 }

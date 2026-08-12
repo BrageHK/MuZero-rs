@@ -201,9 +201,21 @@ impl TrainingTui {
     pub fn set_eval(&mut self, reading: &EvalReading) {
         let games = reading.result.games().max(1) as f64;
         Self::set(&mut self.renderer, &self.elo_id, reading.elo as f64);
-        Self::set(&mut self.renderer, &self.eval_score_id, reading.result.score() as f64);
-        Self::set(&mut self.renderer, &self.win_id, 100.0 * reading.result.wins as f64 / games);
-        Self::set(&mut self.renderer, &self.draw_id, 100.0 * reading.result.draws as f64 / games);
+        Self::set(
+            &mut self.renderer,
+            &self.eval_score_id,
+            reading.result.score() as f64,
+        );
+        Self::set(
+            &mut self.renderer,
+            &self.win_id,
+            100.0 * reading.result.wins as f64 / games,
+        );
+        Self::set(
+            &mut self.renderer,
+            &self.draw_id,
+            100.0 * reading.result.draws as f64 / games,
+        );
         Self::set(
             &mut self.renderer,
             &self.loss_pct_id,

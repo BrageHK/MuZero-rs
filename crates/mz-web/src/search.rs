@@ -167,7 +167,8 @@ pub async fn gumbel_search<B: Backend, N: MuZeroNets<B>>(
             TensorData::from([nodes[leaf_idx].action as i64].as_slice()),
             device,
         );
-        let (new_hidden, reward, value, policy) = net.recurrent_inference(hidden, action, action_space);
+        let (new_hidden, reward, value, policy) =
+            net.recurrent_inference(hidden, action, action_space);
 
         let [reward, value, policy] = Transaction::default()
             .register(reward)
@@ -346,7 +347,12 @@ fn gumbel_root_select(
     let mut fallback = first_child;
     let mut fewest_visits = usize::MAX;
 
-    for (child_idx, child) in nodes.iter().enumerate().skip(first_child).take(action_space) {
+    for (child_idx, child) in nodes
+        .iter()
+        .enumerate()
+        .skip(first_child)
+        .take(action_space)
+    {
         if !child.legal {
             continue;
         }

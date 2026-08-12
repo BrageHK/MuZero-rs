@@ -56,7 +56,12 @@ pub fn logits_to_scalars(flat_logits: &[f32], batch: usize, support_size: usize)
 /// `support_len(support_size)`-wide logits decoded via softmax + the invertible
 /// transform; scalar rows (board games) are already the prediction (width 1)
 /// and are returned as-is.
-pub fn output_to_scalars(flat: &[f32], batch: usize, support_size: usize, categorical: bool) -> Vec<f32> {
+pub fn output_to_scalars(
+    flat: &[f32],
+    batch: usize,
+    support_size: usize,
+    categorical: bool,
+) -> Vec<f32> {
     if categorical {
         logits_to_scalars(flat, batch, support_size)
     } else {

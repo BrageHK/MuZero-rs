@@ -59,7 +59,10 @@ impl BoardSymmetry {
         if !mz_conf.board_symmetric() {
             return None;
         }
-        Some(BoardSymmetry::new(mz_conf.board_height, mz_conf.board_width))
+        Some(BoardSymmetry::new(
+            mz_conf.board_height,
+            mz_conf.board_width,
+        ))
     }
 
     pub fn sample(&mut self) -> usize {
@@ -122,7 +125,11 @@ mod tests {
     #[test]
     fn identity_is_a_no_op() {
         let mut sym = BoardSymmetry::new(3, 3);
-        let mut game = vec![data((0..9).map(|i| i as f32).collect(), 4, (0..9).map(|i| i as f32).collect())];
+        let mut game = vec![data(
+            (0..9).map(|i| i as f32).collect(),
+            4,
+            (0..9).map(|i| i as f32).collect(),
+        )];
         let before = game[0].state.clone();
         sym.apply_game(&mut game, 0);
         assert_eq!(game[0].state, before);
@@ -132,7 +139,11 @@ mod tests {
     fn rot90_moves_top_left_to_top_right() {
         // 3x3 board, single channel; cell 0 (top-left) rotates to the top-right corner.
         let mut sym = BoardSymmetry::new(3, 3);
-        let mut game = vec![data(vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0, vec![0.0; 9])];
+        let mut game = vec![data(
+            vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            0,
+            vec![0.0; 9],
+        )];
         sym.apply_game(&mut game, 1);
         assert_eq!(game[0].state[2], 1.0);
         assert_eq!(game[0].action, 2);

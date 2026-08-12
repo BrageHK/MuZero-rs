@@ -73,7 +73,10 @@ mod tests {
             let mut env = Othello::new();
             loop {
                 let value = env.heuristic();
-                assert!(value.is_finite() && value.abs() <= 0.99, "out of range: {value}");
+                assert!(
+                    value.is_finite() && value.abs() <= 0.99,
+                    "out of range: {value}"
+                );
                 let actions: Vec<usize> = env.legal_actions().collect();
                 if actions.is_empty() || env.step(actions[rng.usize(..actions.len())]).done {
                     break;

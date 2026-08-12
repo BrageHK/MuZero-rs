@@ -12,7 +12,7 @@ pub struct EnvInfo {
     pub action_size: usize,
     pub num_players: usize,
     pub upper_reward_bound: Option<f32>,
-    pub lower_reward_bound: Option<f32>
+    pub lower_reward_bound: Option<f32>,
 }
 
 impl EnvInfo {

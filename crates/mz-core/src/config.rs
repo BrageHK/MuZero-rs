@@ -72,11 +72,19 @@ impl NetConfig {
     }
 
     pub fn value_support_len(&self) -> usize {
-        if self.categorical { self.support_len() } else { 1 }
+        if self.categorical {
+            self.support_len()
+        } else {
+            1
+        }
     }
 
     pub fn reward_support_len(&self) -> usize {
-        if self.categorical { self.support_len() } else { 1 }
+        if self.categorical {
+            self.support_len()
+        } else {
+            1
+        }
     }
 
     pub fn linear(&self) -> &LinearSubConfig {

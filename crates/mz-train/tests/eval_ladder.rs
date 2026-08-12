@@ -79,7 +79,11 @@ fn othello_eval_tallies_every_game() {
     assert_eq!(reading.result.games(), 20);
     assert_eq!(reading.opponent, "AlphaBeta(d=1)");
     // An untrained net should not be beating a heuristic opponent.
-    assert!(reading.result.score() < 0.5, "score {}", reading.result.score());
+    assert!(
+        reading.result.score() < 0.5,
+        "score {}",
+        reading.result.score()
+    );
     assert!(reading.elo < 500.0);
 }
 

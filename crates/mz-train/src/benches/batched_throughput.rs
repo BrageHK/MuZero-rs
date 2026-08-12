@@ -30,11 +30,11 @@ const ACTION_SPACE: usize = BOARD * BOARD + 1; // 64 moves + pass
 type B = Dispatch;
 
 fn othello_conf() -> MuZeroConfig {
-    let mut conf = MuZeroConfig { 
-        action_space: ACTION_SPACE, 
-        obs_dim: OBS_CHANNELS * BOARD * BOARD, 
-        num_simulations: NUM_SIMULATIONS, 
-        ..Default::default() 
+    let mut conf = MuZeroConfig {
+        action_space: ACTION_SPACE,
+        obs_dim: OBS_CHANNELS * BOARD * BOARD,
+        num_simulations: NUM_SIMULATIONS,
+        ..Default::default()
     };
     conf.action_space = ACTION_SPACE;
     conf.obs_dim = OBS_CHANNELS * BOARD * BOARD;
@@ -82,7 +82,16 @@ fn run_group<N: MuZeroNets<B>>(c: &mut Criterion, group_name: &str) {
             }
             mz_conf.rayon_min_chunk_len = min_len;
             group.bench_with_input(BenchmarkId::new(mode, n_games), &n_games, |b, _| {
-                b.iter(|| black_box(batched_search(obs.clone(), None, &mz_conf, &agent, 1.0, false)))
+                b.iter(|| {
+                    black_box(batched_search(
+                        obs.clone(),
+                        None,
+                        &mz_conf,
+                        &agent,
+                        1.0,
+                        false,
+                    ))
+                })
             });
         }
     }

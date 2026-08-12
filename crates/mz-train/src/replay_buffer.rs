@@ -108,7 +108,10 @@ impl ReplayBuffer {
                     reward: 0.0,
                     policy: uniform_policy.clone(),
                     is_absorbing: true,
-                    ..sequence.last().expect("sequence has at least one state").clone()
+                    ..sequence
+                        .last()
+                        .expect("sequence has at least one state")
+                        .clone()
                 };
                 sequence.push(BufferData {
                     action: self.rng.usize(0..mz_config.action_space),
@@ -140,11 +143,7 @@ impl ReplayBuffer {
         sequence
     }
 
-    fn n_step_value(
-        &self,
-        idx: usize,
-        mz_config: &MuZeroConfig
-    ) -> f32 {
+    fn n_step_value(&self, idx: usize, mz_config: &MuZeroConfig) -> f32 {
         let mut value = 0.0;
         for k in 0..mz_config.n_steps {
             let curr_idx = idx + k;
@@ -172,7 +171,6 @@ impl ReplayBuffer {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,10 +193,10 @@ mod tests {
 
     #[test]
     fn store_games() {
-        let mz_config = MuZeroConfig { 
-            training_batch_size: 1, 
-            is_twoplayer: false, 
-            ..Default::default() 
+        let mz_config = MuZeroConfig {
+            training_batch_size: 1,
+            is_twoplayer: false,
+            ..Default::default()
         };
         let mut buffer = ReplayBuffer::default();
         buffer.store_game(create_game(3), &mz_config);
@@ -245,10 +243,10 @@ mod tests {
 
     #[test]
     fn store_1_game() {
-        let mz_config = MuZeroConfig { 
-            training_batch_size: 1, 
-            is_twoplayer: false, 
-            ..Default::default() 
+        let mz_config = MuZeroConfig {
+            training_batch_size: 1,
+            is_twoplayer: false,
+            ..Default::default()
         };
         let mut buffer = ReplayBuffer::default();
         buffer.store_game(create_game(1), &mz_config);

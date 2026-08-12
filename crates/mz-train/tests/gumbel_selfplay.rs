@@ -1,16 +1,15 @@
 #![cfg(feature = "ndarray")]
 
+use burn::backend::Autodiff;
 use burn::backend::NdArray;
 use burn::backend::ndarray::NdArrayDevice;
 use burn::module::AutodiffModule;
-use burn::backend::Autodiff;
 
 use mz_rs::agent::MlpNets;
 use mz_rs::env::Environment;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
 use mz_rs::mz_config::{
-    GumbelSubConfig, MuZeroConfig, NetworkType, PuctSubConfig, SearchAlgorithm,
-    TemperatureSchedule,
+    GumbelSubConfig, MuZeroConfig, NetworkType, PuctSubConfig, SearchAlgorithm, TemperatureSchedule,
 };
 use mz_rs::networks::nets_to_backend;
 use mz_rs::optim::AnyOptimizer;
@@ -53,8 +52,7 @@ fn run_loop(mz_conf: &MuZeroConfig, iterations: usize) -> (Vec<f32>, Vec<usize>)
     let device = NdArrayDevice::default();
     let mut agent: MlpNets<TrainB> = mz_conf.init(&device);
     let mut optimizer = AnyOptimizer::<TrainB, MlpNets<TrainB>>::new(mz_conf);
-    let mut inference_agent: MlpNets<NdArray> =
-        nets_to_backend(&agent.valid(), mz_conf, &device);
+    let mut inference_agent: MlpNets<NdArray> = nets_to_backend(&agent.valid(), mz_conf, &device);
 
     let mut buffer = ReplayBuffer::new(mz_conf);
     let mut env_batch = vec![CartPoleWrapper::default(); mz_conf.game_batch_size];
@@ -69,7 +67,14 @@ fn run_loop(mz_conf: &MuZeroConfig, iterations: usize) -> (Vec<f32>, Vec<usize>)
     for _ in 0..iterations {
         let obs = CartPoleWrapper::batch_state_tensor::<NdArray>(&env_batch, &device);
         let legal_masks: Vec<Vec<bool>> = env_batch.iter().map(|env| env.legal_mask()).collect();
-        let results = batched_search(obs, Some(&legal_masks), mz_conf, &inference_agent, 0.0, true);
+        let results = batched_search(
+            obs,
+            Some(&legal_masks),
+            mz_conf,
+            &inference_agent,
+            0.0,
+            true,
+        );
 
         assert_eq!(results.len(), mz_conf.game_batch_size);
         for (i, result) in results.iter().enumerate() {
@@ -83,7 +88,11 @@ fn run_loop(mz_conf: &MuZeroConfig, iterations: usize) -> (Vec<f32>, Vec<usize>)
                 (target_sum - 1.0).abs() < 1e-3,
                 "policy target sums to {target_sum}"
             );
-            assert!(result.value.is_finite(), "root value {} not finite", result.value);
+            assert!(
+                result.value.is_finite(),
+                "root value {} not finite",
+                result.value
+            );
 
             let state = env_batch[i].obs();
             let step = env_batch[i].step(result.best_action);

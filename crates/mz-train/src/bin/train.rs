@@ -8,17 +8,20 @@ use burn::{Dispatch, DispatchDevice};
 use mz_rs::env::Environment;
 
 use mz_rs::async_train;
+use mz_rs::augment::Augmenter;
+use mz_rs::board_symmetry::BoardSymmetry;
+use mz_rs::eval::EloLadder;
 use mz_rs::mz_config::{MuZeroConfig, SearchAlgorithm};
 use mz_rs::networks::{MuZeroNets, nets_to_backend};
 use mz_rs::optim::AnyOptimizer;
 use mz_rs::replay_buffer::{BufferData, ReplayBuffer};
-use mz_rs::eval::EloLadder;
 use mz_rs::search::batched_search;
 use mz_rs::train::{reanalyze, reanalyze_due, train};
 use mz_rs::tui_metrics::TrainingTui;
-use mz_rs::augment::Augmenter;
-use mz_rs::board_symmetry::BoardSymmetry;
-use mz_rs::utils::{lr_for_step, save_buffer, select_device, tau_for_step};
+use mz_rs::utils::{
+    load_buffer, load_training_step, lr_for_step, save_buffer, save_training_step, select_device,
+    tau_for_step,
+};
 use mz_rs::{with_env, with_net};
 
 use rand_distr::Distribution;
@@ -60,17 +63,21 @@ fn run<E, TrainB, InferB, NT, NI>(
     NT::InnerModule: MuZeroNets<TrainB::InnerBackend>,
     NI: MuZeroNets<InferB>,
 {
+    let ckpt_dir = mz_conf.checkpoint_dir();
     let mut agent: NT = mz_conf.init_agent(&train_device);
     let mut optimizer = AnyOptimizer::<TrainB, NT>::new(mz_conf);
-    if let Some(ckpt) = &mz_conf.init_checkpoint {
-        let opt_path = std::path::Path::new(ckpt).with_file_name("optimizer");
-        match CompactRecorder::new().load(opt_path.clone(), &inner_device) {
+    let mut buffer = ReplayBuffer::new(mz_conf);
+    let mut training_step = 0usize;
+    if mz_conf.load_from_checkpoint {
+        let opt_path = format!("{ckpt_dir}/optimizer");
+        match CompactRecorder::new().load(opt_path.clone().into(), &inner_device) {
             Ok(record) => optimizer = optimizer.load_record(record),
-            Err(e) => eprintln!("No optimizer state loaded from {opt_path:?}: {e}"),
+            Err(e) => eprintln!("No optimizer state loaded from {opt_path}: {e}"),
         }
+        buffer.states = load_buffer(&format!("{ckpt_dir}/buffer.mpk"));
+        training_step = load_training_step(&format!("{ckpt_dir}/training_step"));
     }
 
-    let mut buffer = ReplayBuffer::new(mz_conf);
     let mut augmenter = Augmenter::from_config(mz_conf);
     let mut board_sym = BoardSymmetry::from_config(mz_conf);
     let mut tui = TrainingTui::new(mz_conf);
@@ -81,8 +88,7 @@ fn run<E, TrainB, InferB, NT, NI>(
         .max(1);
 
     let total_steps = mz_conf.training_steps / training_steps_per_iteration as usize;
-    let mut training_step = 0;
-    let mut next_checkpoint = mz_conf.checkpoint_interval;
+    let mut next_checkpoint = training_step + mz_conf.checkpoint_interval;
 
     if mz_conf.async_training {
         async_train::run::<E, TrainB, InferB, NT, NI>(
@@ -96,6 +102,7 @@ fn run<E, TrainB, InferB, NT, NI>(
             train_device,
             inner_device,
             infer_device,
+            training_step,
         );
         return;
     }
@@ -124,8 +131,14 @@ fn run<E, TrainB, InferB, NT, NI>(
         let obs = E::batch_state_tensor::<InferB>(&env_batch, &infer_device);
         let legal_masks: Vec<Vec<bool>> = env_batch.iter().map(|env| env.legal_mask()).collect();
 
-        let results =
-            batched_search(obs, Some(&legal_masks), mz_conf, &inference_agent, tau, true);
+        let results = batched_search(
+            obs,
+            Some(&legal_masks),
+            mz_conf,
+            &inference_agent,
+            tau,
+            true,
+        );
 
         for (i, search_result) in results.iter().enumerate() {
             let action = match mz_conf.search_algorithm {
@@ -165,17 +178,20 @@ fn run<E, TrainB, InferB, NT, NI>(
 
         // Save model + buffer
         if mz_conf.checkpoint_interval > 0 && training_step >= next_checkpoint {
-            let path = "model/".to_owned() + mz_conf.environment.as_ref();
-            std::fs::create_dir_all(&path).expect("Failed to create directory");
+            std::fs::create_dir_all(&ckpt_dir).expect("Failed to create directory");
             agent
                 .valid()
-                .save_file(format!("{path}/latest"), &CompactRecorder::new())
+                .save_file(format!("{ckpt_dir}/latest"), &CompactRecorder::new())
                 .expect("Failed to save checkpoint");
             CompactRecorder::new()
-                .record(optimizer.to_record(), format!("{path}/optimizer").into())
+                .record(
+                    optimizer.to_record(),
+                    format!("{ckpt_dir}/optimizer").into(),
+                )
                 .expect("Failed to save optimizer state");
             next_checkpoint += mz_conf.checkpoint_interval;
-            save_buffer(&buffer, &format!("{path}/buffer.mpk"));
+            save_buffer(&buffer, &format!("{ckpt_dir}/buffer.mpk"));
+            save_training_step(training_step, &format!("{ckpt_dir}/training_step"));
         }
 
         // Evaluate against the benchmark opponent ladder
@@ -186,7 +202,13 @@ fn run<E, TrainB, InferB, NT, NI>(
 
         // Reanalyze
         if reanalyze_due(mz_conf) {
-            reanalyze(mz_conf, &mut buffer, training_step, &infer_device, &inference_agent);
+            reanalyze(
+                mz_conf,
+                &mut buffer,
+                training_step,
+                &infer_device,
+                &inference_agent,
+            );
         }
 
         // Train

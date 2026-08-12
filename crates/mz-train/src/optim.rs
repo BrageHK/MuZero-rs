@@ -1,9 +1,9 @@
 //! Runtime-selected optimizer behind a single type, so training loops are
 //! compiled once instead of once per optimizer.
 
+use burn::grad_clipping::GradientClippingConfig;
 use burn::module::AutodiffModule;
 use burn::optim::adaptor::OptimizerAdaptor;
-use burn::grad_clipping::GradientClippingConfig;
 use burn::optim::decay::WeightDecayConfig;
 use burn::optim::momentum::MomentumConfig;
 use burn::optim::{
@@ -61,9 +61,8 @@ where
                     .with_gradient_clipping(clip)
                     .with_weight_decay(weight_decay)
                     .with_momentum(
-                        (mz_conf.momentum > 0.0).then(|| {
-                            MomentumConfig::new().with_momentum(mz_conf.momentum as f64)
-                        }),
+                        (mz_conf.momentum > 0.0)
+                            .then(|| MomentumConfig::new().with_momentum(mz_conf.momentum as f64)),
                     )
                     .init(),
             ),

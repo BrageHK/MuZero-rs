@@ -54,7 +54,11 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     let device = observations.device();
     let discount = mz_conf.discount;
     let action_space = mz_conf.action_space;
-    let value_sign = if mz_conf.is_twoplayer { -1.0f32 } else { 1.0f32 };
+    let value_sign = if mz_conf.is_twoplayer {
+        -1.0f32
+    } else {
+        1.0f32
+    };
     let categorical = mz_conf.categorical();
     let algorithm = mz_conf.search_algorithm;
     let puct_conf = match algorithm {
@@ -67,8 +71,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
     };
     let c_visit = gumbel_conf.map_or(0.0, |g| g.c_visit);
     let c_scale = gumbel_conf.map_or(0.0, |g| g.c_scale);
-    let max_considered =
-        gumbel_conf.map_or(0, |g| g.max_num_considered_actions.min(action_space));
+    let max_considered = gumbel_conf.map_or(0, |g| g.max_num_considered_actions.min(action_space));
     let alpha = puct_conf.map_or(0.0, |p| p.dirichlet_alpha);
     let frac = match (puct_conf, add_exploration_noise) {
         (Some(puct), true) => puct.root_exploration_fraction,
@@ -105,10 +108,18 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         .expect("Correct amount of tensor data");
 
     let support_size = mz_conf.support_size;
-    let root_rewards =
-        output_to_scalars(&root_rewards.into_vec::<f32>().unwrap(), batch_size, support_size, categorical);
-    let root_values =
-        output_to_scalars(&root_values.into_vec::<f32>().unwrap(), batch_size, support_size, categorical);
+    let root_rewards = output_to_scalars(
+        &root_rewards.into_vec::<f32>().unwrap(),
+        batch_size,
+        support_size,
+        categorical,
+    );
+    let root_values = output_to_scalars(
+        &root_values.into_vec::<f32>().unwrap(),
+        batch_size,
+        support_size,
+        categorical,
+    );
     let root_policies = root_policies.into_vec::<f32>().unwrap();
 
     let forced_result = |i: usize, action: usize| {
@@ -135,8 +146,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
         SearchAlgorithm::Puct => Vec::new(),
     };
 
-    let mut norms: Vec<QNormalization> =
-        (0..n_active).map(|_| QNormalization::default()).collect();
+    let mut norms: Vec<QNormalization> = (0..n_active).map(|_| QNormalization::default()).collect();
 
     let mut tree_batch: Vec<TreeScratch> = (0..n_active)
         .map(|_| TreeScratch {
@@ -208,8 +218,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
                 } else {
                     vec![0.0; action_space]
                 };
-                let num_legal =
-                    mask.map_or(action_space, |m| m.iter().filter(|&&l| l).count());
+                let num_legal = mask.map_or(action_space, |m| m.iter().filter(|&&l| l).count());
                 tree.num_considered = num_legal.min(max_considered);
             }
 
@@ -223,7 +232,11 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
                     cumulative_value: 0.,
                     reward: 0.,
                     prior,
-                    logit: if legal { logits[action] } else { f32::NEG_INFINITY },
+                    logit: if legal {
+                        logits[action]
+                    } else {
+                        f32::NEG_INFINITY
+                    },
                     value: 0.,
                     legal,
                 });
@@ -272,8 +285,7 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
                                 &mut tree.scores,
                             );
                             if curr_node_idx == 0 {
-                                let threshold =
-                                    considered_table[tree.num_considered][sim_step];
+                                let threshold = considered_table[tree.num_considered][sim_step];
                                 gumbel_root_select(
                                     nodes,
                                     action_space,
@@ -324,10 +336,18 @@ pub fn batched_search<B: Backend, N: MuZeroNets<B>>(
             .try_into()
             .expect("Correct amount of tensor data");
 
-        let new_rewards =
-            output_to_scalars(&new_rewards.into_vec::<f32>().unwrap(), n_active, support_size, categorical);
-        let new_values =
-            output_to_scalars(&new_values.into_vec::<f32>().unwrap(), n_active, support_size, categorical);
+        let new_rewards = output_to_scalars(
+            &new_rewards.into_vec::<f32>().unwrap(),
+            n_active,
+            support_size,
+            categorical,
+        );
+        let new_values = output_to_scalars(
+            &new_values.into_vec::<f32>().unwrap(),
+            n_active,
+            support_size,
+            categorical,
+        );
         let new_policies = new_policies.into_vec::<f32>().unwrap();
 
         // Expansion + backprop, one rayon task per tree
@@ -422,7 +442,12 @@ fn puct_select(
 
     let mut best_puct = f32::NEG_INFINITY;
     let mut best_node = first_child;
-    for (child_idx, child) in nodes.iter().enumerate().skip(first_child).take(action_space) {
+    for (child_idx, child) in nodes
+        .iter()
+        .enumerate()
+        .skip(first_child)
+        .take(action_space)
+    {
         if !child.legal {
             continue;
         }
@@ -455,8 +480,9 @@ fn completed_q_scaled(
     let first_child = nodes[node_idx].first_child;
     let children = &nodes[first_child..first_child + action_space];
 
-    let child_q =
-        |child: &BatchNode| child.reward + discount * value_sign * child.cumulative_value / child.visits as f32;
+    let child_q = |child: &BatchNode| {
+        child.reward + discount * value_sign * child.cumulative_value / child.visits as f32
+    };
 
     let mut sum_visits = 0usize;
     let mut max_visits = 0usize;
@@ -515,7 +541,12 @@ fn gumbel_root_select(
     let mut fallback = first_child;
     let mut fewest_visits = usize::MAX;
 
-    for (child_idx, child) in nodes.iter().enumerate().skip(first_child).take(action_space) {
+    for (child_idx, child) in nodes
+        .iter()
+        .enumerate()
+        .skip(first_child)
+        .take(action_space)
+    {
         if !child.legal {
             continue;
         }
@@ -620,8 +651,7 @@ fn extract_result(nodes: &[BatchNode], action_space: usize, tau: f32) -> SearchR
             for child_idx in children {
                 let child = &nodes[child_idx];
                 if child.legal {
-                    distribution[child.action] =
-                        (child.visits as f32).powf(1.0 / tau) / visit_sum;
+                    distribution[child.action] = (child.visits as f32).powf(1.0 / tau) / visit_sum;
                 }
             }
         } else {
@@ -896,7 +926,10 @@ mod tests {
 
     #[test]
     fn considered_visit_sequences() {
-        assert_eq!(sequence_of_considered_visits(4, 8), vec![0, 0, 0, 0, 1, 1, 2, 2]);
+        assert_eq!(
+            sequence_of_considered_visits(4, 8),
+            vec![0, 0, 0, 0, 1, 1, 2, 2]
+        );
         assert_eq!(sequence_of_considered_visits(2, 4), vec![0, 0, 1, 1]);
         assert_eq!(sequence_of_considered_visits(1, 5), vec![0, 1, 2, 3, 4]);
         assert_eq!(sequence_of_considered_visits(0, 3), vec![0, 1, 2]);
@@ -924,8 +957,7 @@ mod tests {
         nodes.push(child(0, 1, 0.5, 0.0, 0.0));
 
         let mut out = Vec::new();
-        let (sum_visits, v_mix) =
-            completed_q_scaled(&nodes, 0, 2, 1.0, 1.0, 50.0, 0.1, &mut out);
+        let (sum_visits, v_mix) = completed_q_scaled(&nodes, 0, 2, 1.0, 1.0, 50.0, 0.1, &mut out);
 
         assert_eq!(sum_visits, 0);
         assert!((v_mix - 1.5).abs() < 1e-6);
@@ -946,8 +978,7 @@ mod tests {
         nodes.push(child(0, 1, 0.0, 0.0, 0.0));
 
         let mut out = Vec::new();
-        let (sum_visits, v_mix) =
-            completed_q_scaled(&nodes, 0, 2, 1.0, 1.0, 50.0, 0.1, &mut out);
+        let (sum_visits, v_mix) = completed_q_scaled(&nodes, 0, 2, 1.0, 1.0, 50.0, 0.1, &mut out);
 
         assert_eq!(sum_visits, visits);
         let expected = (raw_value + visits as f32 * q) / (visits as f32 + 1.0);
@@ -979,7 +1010,10 @@ mod tests {
                     let sum: f32 = res.distribution.iter().sum();
                     assert!((sum - 1.0).abs() < 1e-4, "distribution sums to {sum}");
                     let target_sum: f32 = res.policy_target.iter().sum();
-                    assert!((target_sum - 1.0).abs() < 1e-4, "target sums to {target_sum}");
+                    assert!(
+                        (target_sum - 1.0).abs() < 1e-4,
+                        "target sums to {target_sum}"
+                    );
                     assert!(res.best_action < mz_conf.action_space);
                     assert!(res.value.is_finite());
                 }
