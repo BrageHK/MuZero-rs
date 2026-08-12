@@ -5,13 +5,13 @@ use burn::{
     tensor::backend::Backend,
 };
 
-use crate::networks::resnet::resblock::ResBlock;
+use crate::networks::resnet::tower_block::TowerBlock;
 
 #[derive(Module, Debug)]
 pub struct ResNetRepresentation<B: Backend> {
     pub(super) stem: Conv2d<B>,
     pub(super) stem_bn: BatchNorm<B>,
-    pub(super) blocks: Vec<ResBlock<B>>,
+    pub(super) blocks: Vec<TowerBlock<B>>,
     pub(super) relu: Relu,
 }
 

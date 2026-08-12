@@ -1,8 +1,11 @@
 pub mod dynamics;
+pub mod gpool_resblock;
+pub mod pooling;
 pub mod prediction;
 pub mod projection;
 pub mod representation;
 pub mod resblock;
+pub mod tower_block;
 
 use burn::{
     Tensor,
@@ -18,10 +21,10 @@ use burn::{
 use crate::config::NetConfig;
 use crate::networks::MuZeroNets;
 use crate::networks::resnet::dynamics::ResNetDynamics;
-use crate::networks::resnet::prediction::ResNetPrediction;
+use crate::networks::resnet::prediction::{PolicyGPool, ResNetPrediction};
 use crate::networks::resnet::projection::{ConvProjection, ConvProjectionConfig};
 use crate::networks::resnet::representation::ResNetRepresentation;
-use crate::networks::resnet::resblock::{ResBlock, ResBlockConfig};
+use crate::networks::resnet::tower_block::build_tower;
 
 #[derive(Config, Debug)]
 pub struct ResNetConfig {
@@ -40,14 +43,27 @@ pub struct ResNetConfig {
     // dynamics/representation outputs both flow through prediction/projection.
     pub representation_channels: usize,
     pub representation_n_blocks: usize,
+    #[config(default = 0)]
+    pub representation_gpool_every: usize,
+    #[config(default = 0)]
+    pub representation_gpool_channels: usize,
 
     pub dynamic_channels: usize,
     pub dynamic_n_blocks: usize,
     pub dynamic_fc_hidden_size: usize,
+    #[config(default = 0)]
+    pub dynamic_gpool_every: usize,
+    #[config(default = 0)]
+    pub dynamic_gpool_channels: usize,
 
     pub prediction_channels: usize,
     pub prediction_n_blocks: usize,
     pub prediction_fc_hidden_size: usize,
+
+    #[config(default = 0)]
+    pub policy_gpool_channels: usize,
+    #[config(default = 0)]
+    pub value_gpool_channels: usize,
 }
 
 pub(super) fn conv3x3<B: Backend>(c_in: usize, c_out: usize, device: &B::Device) -> Conv2d<B> {
@@ -77,27 +93,58 @@ pub struct ResNets<B: Backend> {
 impl ResNetConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> ResNets<B> {
         let (h, w) = (self.board_height, self.board_width);
-        let blocks = |c: usize, n: usize| -> Vec<ResBlock<B>> {
-            (0..n)
-                .map(|_| ResBlockConfig::new(c, c, c).init(device))
-                .collect()
-        };
 
         let c_repr = self.representation_channels;
         let c_dyn = self.dynamic_channels;
         let c_pred = self.prediction_channels;
 
+        let policy_gpool = if self.policy_gpool_channels > 0 {
+            let cg = self.policy_gpool_channels;
+            Some(PolicyGPool {
+                g_conv: conv1x1(c_pred, cg, device),
+                g_bn: BatchNormConfig::new(cg).init(device),
+                gpool_fc: LinearConfig::new(2 * cg, 2).init(device),
+                relu: Relu,
+            })
+        } else {
+            None
+        };
+
+        let value_pooled = self.value_gpool_channels > 0;
+        let value_channels = if value_pooled {
+            self.value_gpool_channels
+        } else {
+            1
+        };
+        let value_fc1_input = if value_pooled {
+            2 * value_channels
+        } else {
+            h * w
+        };
+
         ResNets {
             representation: ResNetRepresentation {
                 stem: conv3x3(self.obs_channels, c_repr, device),
                 stem_bn: BatchNormConfig::new(c_repr).init(device),
-                blocks: blocks(c_repr, self.representation_n_blocks),
+                blocks: build_tower(
+                    c_repr,
+                    self.representation_n_blocks,
+                    self.representation_gpool_every,
+                    self.representation_gpool_channels,
+                    device,
+                ),
                 relu: Relu,
             },
             dynamics: ResNetDynamics {
                 fuse: conv3x3(c_dyn + self.action_space, c_dyn, device),
                 fuse_bn: BatchNormConfig::new(c_dyn).init(device),
-                blocks: blocks(c_dyn, self.dynamic_n_blocks),
+                blocks: build_tower(
+                    c_dyn,
+                    self.dynamic_n_blocks,
+                    self.dynamic_gpool_every,
+                    self.dynamic_gpool_channels,
+                    device,
+                ),
                 reward_conv: conv1x1(c_dyn, 1, device),
                 reward_bn: BatchNormConfig::new(1).init(device),
                 reward_fc1: LinearConfig::new(h * w, self.dynamic_fc_hidden_size).init(device),
@@ -109,11 +156,14 @@ impl ResNetConfig {
                 policy_conv: conv1x1(c_pred, 2, device),
                 policy_bn: BatchNormConfig::new(2).init(device),
                 policy_fc: LinearConfig::new(2 * h * w, self.action_space).init(device),
-                value_conv: conv1x1(c_pred, 1, device),
-                value_bn: BatchNormConfig::new(1).init(device),
-                value_fc1: LinearConfig::new(h * w, self.prediction_fc_hidden_size).init(device),
+                policy_gpool,
+                value_conv: conv1x1(c_pred, value_channels, device),
+                value_bn: BatchNormConfig::new(value_channels).init(device),
+                value_fc1: LinearConfig::new(value_fc1_input, self.prediction_fc_hidden_size)
+                    .init(device),
                 value_fc2: LinearConfig::new(self.prediction_fc_hidden_size, self.value_support)
                     .init(device),
+                value_pooled,
                 relu: Relu,
             },
             projection: ConvProjectionConfig {
@@ -162,14 +212,21 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
 
             representation_channels: resnet.representation.channels,
             representation_n_blocks: resnet.representation.n_blocks,
+            representation_gpool_every: resnet.representation.gpool.every,
+            representation_gpool_channels: resnet.representation.gpool.pool_channels,
 
             dynamic_channels: resnet.dynamic.channels,
             dynamic_n_blocks: resnet.dynamic.n_blocks,
             dynamic_fc_hidden_size: resnet.dynamic.fc_hidden_size,
+            dynamic_gpool_every: resnet.dynamic.gpool.every,
+            dynamic_gpool_channels: resnet.dynamic.gpool.pool_channels,
 
             prediction_channels: resnet.prediction.channels,
             prediction_n_blocks: resnet.prediction.n_blocks,
             prediction_fc_hidden_size: resnet.prediction.fc_hidden_size,
+
+            policy_gpool_channels: resnet.head_gpool.policy_channels,
+            value_gpool_channels: resnet.head_gpool.value_channels,
         }
         .init(device)
     }
@@ -230,14 +287,54 @@ mod tests {
 
             representation_channels: 8,
             representation_n_blocks: 2,
+            representation_gpool_every: 0,
+            representation_gpool_channels: 0,
 
             dynamic_channels: 8,
             dynamic_n_blocks: 2,
             dynamic_fc_hidden_size: 16,
+            dynamic_gpool_every: 0,
+            dynamic_gpool_channels: 0,
 
             prediction_channels: 8,
             prediction_n_blocks: 2,
             prediction_fc_hidden_size: 16,
+
+            policy_gpool_channels: 0,
+            value_gpool_channels: 0,
+        }
+        .init(device)
+    }
+
+    fn test_nets_with_gpool(device: &MyDevice) -> ResNets<MyBackend> {
+        ResNetConfig {
+            obs_channels: 3,
+            board_height: 4,
+            board_width: 4,
+            action_space: 5,
+            value_support: 7,
+            reward_support: 7,
+            proj_hidden: 32,
+            proj_out: 16,
+            pred_hidden: 16,
+
+            representation_channels: 8,
+            representation_n_blocks: 4,
+            representation_gpool_every: 2,
+            representation_gpool_channels: 4,
+
+            dynamic_channels: 8,
+            dynamic_n_blocks: 4,
+            dynamic_fc_hidden_size: 16,
+            dynamic_gpool_every: 2,
+            dynamic_gpool_channels: 4,
+
+            prediction_channels: 8,
+            prediction_n_blocks: 2,
+            prediction_fc_hidden_size: 16,
+
+            policy_gpool_channels: 4,
+            value_gpool_channels: 4,
         }
         .init(device)
     }
@@ -299,5 +396,81 @@ mod tests {
             let sum: f32 = row.iter().sum();
             assert!((sum - 1.0).abs() < 1e-4, "policy row sums to {sum}");
         }
+    }
+
+    #[test]
+    fn forward_shapes_with_gpool() {
+        let device = Default::default();
+        let nets = test_nets_with_gpool(&device);
+
+        let obs = Tensor::<MyBackend, 2>::zeros([2, 3 * 4 * 4], &device);
+        let hidden = nets.represent(obs);
+        assert_eq!(hidden.dims(), [2, 8 * 4 * 4]);
+
+        let action = Tensor::<MyBackend, 1, Int>::from_data([1, 3], &device);
+        let (next_hidden, reward) = nets.dynamics(hidden.clone(), action, 5);
+        assert_eq!(next_hidden.dims(), [2, 8 * 4 * 4]);
+        assert_eq!(reward.dims(), [2, 7]);
+
+        let (value, policy) = nets.predict(hidden);
+        assert_eq!(value.dims(), [2, 7]);
+        // policy_fc's output shape is unchanged by policy_gpool_channels > 0 —
+        // the bias injection is purely additive and never touches action_space.
+        assert_eq!(policy.dims(), [2, 5]);
+    }
+
+    #[test]
+    fn value_head_pooled_is_resolution_agnostic() {
+        fn nets_with_board(device: &MyDevice, h: usize, w: usize) -> ResNets<MyBackend> {
+            ResNetConfig {
+                obs_channels: 3,
+                board_height: h,
+                board_width: w,
+                action_space: 5,
+                value_support: 7,
+                reward_support: 7,
+                proj_hidden: 32,
+                proj_out: 16,
+                pred_hidden: 16,
+
+                representation_channels: 8,
+                representation_n_blocks: 2,
+                representation_gpool_every: 0,
+                representation_gpool_channels: 0,
+
+                dynamic_channels: 8,
+                dynamic_n_blocks: 2,
+                dynamic_fc_hidden_size: 16,
+                dynamic_gpool_every: 0,
+                dynamic_gpool_channels: 0,
+
+                prediction_channels: 8,
+                prediction_n_blocks: 2,
+                prediction_fc_hidden_size: 16,
+
+                policy_gpool_channels: 0,
+                value_gpool_channels: 4,
+            }
+            .init(device)
+        }
+
+        let device = Default::default();
+        let small = nets_with_board(&device, 4, 4);
+        let large = nets_with_board(&device, 8, 8);
+
+        // value_fc1's input width must stay 2*value_gpool_channels regardless
+        // of board size once pooling replaces the old flatten(h*w) path.
+        assert_eq!(
+            small.prediction.value_fc1.weight.val().dims(),
+            large.prediction.value_fc1.weight.val().dims()
+        );
+
+        let obs_small = Tensor::<MyBackend, 2>::zeros([2, 3 * 4 * 4], &device);
+        let (value, _) = small.predict(small.represent(obs_small));
+        assert_eq!(value.dims(), [2, 7]);
+
+        let obs_large = Tensor::<MyBackend, 2>::zeros([2, 3 * 8 * 8], &device);
+        let (value, _) = large.predict(large.represent(obs_large));
+        assert_eq!(value.dims(), [2, 7]);
     }
 }

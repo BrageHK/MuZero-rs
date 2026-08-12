@@ -22,10 +22,27 @@ pub struct LinearSubConfig {
     pub prediction: NetworkSubConfig,
 }
 
+/// KataGo-style global pooling (arXiv:1902.10565 §3.3/A.2-A.5), scoped to a
+/// single tower or head. `every == 0` (or `channels == 0` for heads) disables
+/// it, reproducing the exact pre-global-pooling architecture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub struct GPoolConfig {
+    /// Insert a global-pooling residual block every Nth block (1-indexed
+    /// position). 0 disables global pooling in this tower entirely.
+    #[serde(default)]
+    pub every: usize,
+    /// Channels carved out of the block's own width for the pooling branch.
+    /// 0 = auto-pick channels/4 (minimum 4). Ignored when `every == 0`.
+    #[serde(default)]
+    pub pool_channels: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ResNetRepresentationConfig {
     pub channels: usize,
     pub n_blocks: usize,
+    #[serde(default)]
+    pub gpool: GPoolConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -33,6 +50,23 @@ pub struct ResNetBlockConfig {
     pub channels: usize,
     pub n_blocks: usize,
     pub fc_hidden_size: usize,
+    /// Inert for `prediction` (no residual tower there); only `dynamic` acts on this.
+    #[serde(default)]
+    pub gpool: GPoolConfig,
+}
+
+/// Global pooling injected directly into the policy/value heads (KataGo A.4/A.5).
+/// 0 = disabled, reproducing the exact original head shapes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub struct HeadPoolConfig {
+    /// Channels for the policy head's parallel pooling conv. 0 = disabled.
+    #[serde(default)]
+    pub policy_channels: usize,
+    /// Channels for the value head's conv; when > 0 the value head pools
+    /// (mean+max) instead of flattening the full h*w grid, making it
+    /// resolution-agnostic. 0 = disabled (today's flatten(h*w) behavior).
+    #[serde(default)]
+    pub value_channels: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -40,6 +74,8 @@ pub struct ResNetSubConfig {
     pub representation: ResNetRepresentationConfig,
     pub dynamic: ResNetBlockConfig,
     pub prediction: ResNetBlockConfig,
+    #[serde(default)]
+    pub head_gpool: HeadPoolConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]

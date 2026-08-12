@@ -606,3 +606,23 @@ impl MuZeroConfig {
         }
     }
 }
+
+#[cfg(all(test, feature = "ndarray"))]
+mod tests {
+    use burn::backend::NdArray;
+    use mz_core::networks::resnet::ResNets;
+
+    use super::*;
+
+    /// Regression check: the shipped `configs/config.yaml` (including its
+    /// `gpool`/`head_gpool` global-pooling keys) parses and builds a working
+    /// ResNet network family end to end.
+    #[test]
+    fn shipped_config_parses_and_builds_resnet() {
+        let conf = MuZeroConfig::default();
+        assert_eq!(conf.network_type, NetworkType::ResNet);
+
+        let device = Default::default();
+        let _nets: ResNets<NdArray<f32>> = conf.init(&device);
+    }
+}

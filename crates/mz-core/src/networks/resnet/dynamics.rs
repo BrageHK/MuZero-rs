@@ -5,13 +5,13 @@ use burn::{
     tensor::{IndexingUpdateOp, Int, backend::Backend},
 };
 
-use crate::networks::resnet::resblock::ResBlock;
+use crate::networks::resnet::tower_block::TowerBlock;
 
 #[derive(Module, Debug)]
 pub struct ResNetDynamics<B: Backend> {
     pub(super) fuse: Conv2d<B>,
     pub(super) fuse_bn: BatchNorm<B>,
-    pub(super) blocks: Vec<ResBlock<B>>,
+    pub(super) blocks: Vec<TowerBlock<B>>,
     pub(super) reward_conv: Conv2d<B>,
     pub(super) reward_bn: BatchNorm<B>,
     pub(super) reward_fc1: Linear<B>,

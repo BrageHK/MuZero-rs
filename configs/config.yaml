@@ -21,14 +21,19 @@ resnet:
     representation:
         channels: 64
         n_blocks: 15
+        gpool: { every: 3, pool_channels: 16 }  # KataGo-style global pooling block every Nth block; every: 0 disables
     dynamic:
         channels: 64
         n_blocks: 2
         fc_hidden_size: 1024
+        gpool: { every: 0, pool_channels: 0 }   # tiny tower: leave off by default
     prediction:
         channels: 64
         n_blocks: 10
         fc_hidden_size: 1024
+    head_gpool:                                 # global pooling injected directly into the policy/value heads
+        policy_channels: 16                     # 0 disables
+        value_channels: 16                      # 0 disables (falls back to flatten(h*w), resolution-coupled)
 
 # SimSiam: For ResNet the projector reduces channels and pools to 6x6
 projection:
@@ -40,7 +45,7 @@ projection:
 # Options: auto, cuda, rocm, metal, vulkan, wgpu, flex, ndarray, libtorch, libtorch-gpu
 # auto = best compiled-in backend (cuda > metal > rocm > vulkan > wgpu > libtorch > flex > ndarray)
 # Use cargo .... --features <YOUR-BACKEND>
-training_backend: libtorch            # wgpu
+training_backend: vulkan            # wgpu
 inference_backend: vulkan           # ndarray
 
 # Training + algorithm
@@ -49,8 +54,8 @@ unroll_steps: 5
 train_ratio: 2
 
 # Batch sizes
-training_batch_size: 4
-game_batch_size: 32
+training_batch_size: 128
+game_batch_size: 128
 
 # Optimizer
 optimizer: Sgd                      # AdamW, Adam, Sgd
@@ -72,7 +77,7 @@ augmentation: false                 # Only useful for atari
 
 # Search
 search_algorithm: Gumbel            # Puct, Gumbel
-num_simulations: 32
+num_simulations: 16
 discount: 1.0                       # 1.0 for board games, 0.997 otherwise
 
 puct:
@@ -94,7 +99,7 @@ gumbel:
 # Elo rating for board games
 eval:
     interval: 1000                  # training steps between evals. 0 disables
-    games: 32
+    games: 128
     num_simulations: null           # null = same as training
     random_opening_plies: 4         # random plies before the agents take over
     promote_score: 0.80             # score at which the agent moves up one opponent
@@ -115,8 +120,8 @@ buffer_size: 1000000
 training_steps: 10000000
 
 # Reanalyze
-reanalyze_fraction: 0.2            # chance per iteration of refreshing the stalest samples; 0.0 disables
-reanalyze_batch_size: 32          # candidate entries sampled per training step
+reanalyze_fraction: 0.1            # chance per iteration of refreshing the stalest samples; 0.0 disables
+reanalyze_batch_size: 128          # candidate entries sampled per training step
 
 # Parallel settings
 rayon_min_chunk_len: 99999
