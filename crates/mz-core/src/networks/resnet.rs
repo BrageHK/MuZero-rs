@@ -17,17 +17,28 @@ use crate::networks::resblock::{ResBlock, ResBlockConfig};
 #[derive(Config, Debug)]
 pub struct ResNetConfig {
     pub obs_channels: usize,
-    pub channels: usize,
-    pub n_blocks: usize,
     pub board_height: usize,
     pub board_width: usize,
     pub action_space: usize,
-    pub fc_hidden_size: usize,
     pub value_support: usize,
     pub reward_support: usize,
     pub proj_hidden: usize,
     pub proj_out: usize,
     pub pred_hidden: usize,
+
+    // Hidden-state channel count must match across all three blocks: the
+    // representation output is fed straight into dynamics' fuse conv, and
+    // dynamics/representation outputs both flow through prediction/projection.
+    pub representation_channels: usize,
+    pub representation_n_blocks: usize,
+
+    pub dynamic_channels: usize,
+    pub dynamic_n_blocks: usize,
+    pub dynamic_fc_hidden_size: usize,
+
+    pub prediction_channels: usize,
+    pub prediction_n_blocks: usize,
+    pub prediction_fc_hidden_size: usize,
 }
 
 fn conv3x3<B: Backend>(c_in: usize, c_out: usize, device: &B::Device) -> Conv2d<B> {
@@ -153,7 +164,8 @@ pub struct ResNets<B: Backend> {
     pub dynamics: ResNetDynamics<B>,
     pub prediction: ResNetPrediction<B>,
     pub projection: ConvProjection<B>,
-    channels: usize,
+    dynamic_channels: usize,
+    prediction_channels: usize,
     obs_channels: usize,
     board_height: usize,
     board_width: usize,
@@ -161,44 +173,48 @@ pub struct ResNets<B: Backend> {
 
 impl ResNetConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> ResNets<B> {
-        let c = self.channels;
         let (h, w) = (self.board_height, self.board_width);
-        let blocks = |n: usize| -> Vec<ResBlock<B>> {
+        let blocks = |c: usize, n: usize| -> Vec<ResBlock<B>> {
             (0..n)
                 .map(|_| ResBlockConfig::new(c, c, c).init(device))
                 .collect()
         };
 
+        let c_repr = self.representation_channels;
+        let c_dyn = self.dynamic_channels;
+        let c_pred = self.prediction_channels;
+
         ResNets {
             representation: ResNetRepresentation {
-                stem: conv3x3(self.obs_channels, c, device),
-                stem_bn: BatchNormConfig::new(c).init(device),
-                blocks: blocks(self.n_blocks),
+                stem: conv3x3(self.obs_channels, c_repr, device),
+                stem_bn: BatchNormConfig::new(c_repr).init(device),
+                blocks: blocks(c_repr, self.representation_n_blocks),
                 relu: Relu,
             },
             dynamics: ResNetDynamics {
-                fuse: conv3x3(c + self.action_space, c, device),
-                fuse_bn: BatchNormConfig::new(c).init(device),
-                blocks: blocks(self.n_blocks),
-                reward_conv: conv1x1(c, 1, device),
+                fuse: conv3x3(c_dyn + self.action_space, c_dyn, device),
+                fuse_bn: BatchNormConfig::new(c_dyn).init(device),
+                blocks: blocks(c_dyn, self.dynamic_n_blocks),
+                reward_conv: conv1x1(c_dyn, 1, device),
                 reward_bn: BatchNormConfig::new(1).init(device),
-                reward_fc1: LinearConfig::new(h * w, self.fc_hidden_size).init(device),
-                reward_fc2: LinearConfig::new(self.fc_hidden_size, self.reward_support)
+                reward_fc1: LinearConfig::new(h * w, self.dynamic_fc_hidden_size).init(device),
+                reward_fc2: LinearConfig::new(self.dynamic_fc_hidden_size, self.reward_support)
                     .init(device),
                 relu: Relu,
             },
             prediction: ResNetPrediction {
-                policy_conv: conv1x1(c, 2, device),
+                policy_conv: conv1x1(c_pred, 2, device),
                 policy_bn: BatchNormConfig::new(2).init(device),
                 policy_fc: LinearConfig::new(2 * h * w, self.action_space).init(device),
-                value_conv: conv1x1(c, 1, device),
+                value_conv: conv1x1(c_pred, 1, device),
                 value_bn: BatchNormConfig::new(1).init(device),
-                value_fc1: LinearConfig::new(h * w, self.fc_hidden_size).init(device),
-                value_fc2: LinearConfig::new(self.fc_hidden_size, self.value_support).init(device),
+                value_fc1: LinearConfig::new(h * w, self.prediction_fc_hidden_size).init(device),
+                value_fc2: LinearConfig::new(self.prediction_fc_hidden_size, self.value_support)
+                    .init(device),
                 relu: Relu,
             },
             projection: ConvProjectionConfig {
-                channels: c,
+                channels: c_dyn,
                 board_height: h,
                 board_width: w,
                 proj_hidden: self.proj_hidden,
@@ -206,7 +222,8 @@ impl ResNetConfig {
                 pred_hidden: self.pred_hidden,
             }
             .init(device),
-            channels: c,
+            dynamic_channels: c_dyn,
+            prediction_channels: c_pred,
             obs_channels: self.obs_channels,
             board_height: h,
             board_width: w,
@@ -231,17 +248,25 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
         let resnet = net_conf.resnet();
         ResNetConfig {
             obs_channels: net_conf.obs_channels,
-            channels: resnet.channels,
-            n_blocks: resnet.n_blocks,
             board_height: net_conf.board_height,
             board_width: net_conf.board_width,
             action_space: net_conf.action_space,
-            fc_hidden_size: resnet.fc_hidden_size,
             value_support: net_conf.value_support_len(),
             reward_support: net_conf.reward_support_len(),
             proj_hidden: net_conf.projection.proj_hidden,
             proj_out: net_conf.projection.proj_out,
             pred_hidden: net_conf.projection.pred_hidden,
+
+            representation_channels: resnet.representation.channels,
+            representation_n_blocks: resnet.representation.n_blocks,
+
+            dynamic_channels: resnet.dynamic.channels,
+            dynamic_n_blocks: resnet.dynamic.n_blocks,
+            dynamic_fc_hidden_size: resnet.dynamic.fc_hidden_size,
+
+            prediction_channels: resnet.prediction.channels,
+            prediction_n_blocks: resnet.prediction.n_blocks,
+            prediction_fc_hidden_size: resnet.prediction.fc_hidden_size,
         }
         .init(device)
     }
@@ -257,18 +282,18 @@ impl<B: Backend> MuZeroNets<B> for ResNets<B> {
         action: Tensor<B, 1, Int>,
         action_size: usize,
     ) -> (Tensor<B, 2>, Tensor<B, 2>) {
-        let hidden = self.unflatten(hidden, self.channels);
+        let hidden = self.unflatten(hidden, self.dynamic_channels);
         let (hidden_state, reward) = self.dynamics.forward(hidden, action, action_size);
         (self.flatten(hidden_state), reward)
     }
 
     fn predict(&self, hidden: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
-        let hidden = self.unflatten(hidden, self.channels);
+        let hidden = self.unflatten(hidden, self.prediction_channels);
         self.prediction.forward(hidden)
     }
 
     fn project(&self, hidden: Tensor<B, 2>) -> Tensor<B, 2> {
-        let hidden = self.unflatten(hidden, self.channels);
+        let hidden = self.unflatten(hidden, self.dynamic_channels);
         self.projection.project(hidden)
     }
 
@@ -291,17 +316,25 @@ mod tests {
     fn test_nets(device: &MyDevice) -> ResNets<MyBackend> {
         ResNetConfig {
             obs_channels: 3,
-            channels: 8,
-            n_blocks: 2,
             board_height: 4,
             board_width: 4,
             action_space: 5,
-            fc_hidden_size: 16,
             value_support: 7,
             reward_support: 7,
             proj_hidden: 32,
             proj_out: 16,
             pred_hidden: 16,
+
+            representation_channels: 8,
+            representation_n_blocks: 2,
+
+            dynamic_channels: 8,
+            dynamic_n_blocks: 2,
+            dynamic_fc_hidden_size: 16,
+
+            prediction_channels: 8,
+            prediction_n_blocks: 2,
+            prediction_fc_hidden_size: 16,
         }
         .init(device)
     }

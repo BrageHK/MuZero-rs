@@ -19,12 +19,25 @@ fn resnet_config(mz_conf: &MuZeroConfig) -> ResNetConfig {
         .expect("configs/config.yaml needs a `resnet:` section to run this benchmark");
     ResNetConfig {
         obs_channels: mz_conf.obs_channels,
-        channels: resnet.channels,
-        n_blocks: resnet.n_blocks,
         board_height: mz_conf.board_height,
         board_width: mz_conf.board_width,
         action_space: mz_conf.action_space,
-        fc_hidden_size: resnet.fc_hidden_size,
+        value_support: mz_conf.support_len(),
+        reward_support: mz_conf.support_len(),
+        proj_hidden: mz_conf.projection.proj_hidden,
+        proj_out: mz_conf.projection.proj_out,
+        pred_hidden: mz_conf.projection.pred_hidden,
+
+        representation_channels: resnet.representation.channels,
+        representation_n_blocks: resnet.representation.n_blocks,
+
+        dynamic_channels: resnet.dynamic.channels,
+        dynamic_n_blocks: resnet.dynamic.n_blocks,
+        dynamic_fc_hidden_size: resnet.dynamic.fc_hidden_size,
+
+        prediction_channels: resnet.prediction.channels,
+        prediction_n_blocks: resnet.prediction.n_blocks,
+        prediction_fc_hidden_size: resnet.prediction.fc_hidden_size,
     }
 }
 

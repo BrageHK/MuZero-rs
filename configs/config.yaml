@@ -18,23 +18,17 @@ linear:
         n_layers: 3
 
 resnet:
-
-    channels: 128
-    n_blocks: 6
-    fc_hidden_size: 128
-
     representation:
-        channels: 128
-        n_blocks: 6
-        fc_hidden_size: 128
+        channels: 64
+        n_blocks: 15
     dynamic:
-        channels: 128
+        channels: 64
         n_blocks: 2
-        fc_hidden_size: 128
+        fc_hidden_size: 256
     prediction:
-        channels: 128
-        n_blocks: 6
-        fc_hidden_size: 128
+        channels: 64
+        n_blocks: 10
+        fc_hidden_size: 256
 
 # SimSiam: For ResNet the projector reduces channels and pools to 6x6
 projection:

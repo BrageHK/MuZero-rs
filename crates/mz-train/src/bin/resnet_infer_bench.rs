@@ -22,7 +22,7 @@ use mz_rs::utils::{BackendChoice, select_device};
 
 const WARMUP_ITERS: usize = 10;
 const TIMED_ITERS: usize = 100;
-const BATCH_SIZES: &[usize] = &[1, 2, 4, 8, 16, 32, 64, 128];
+const BATCH_SIZES: &[usize] = &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
 const BACKENDS: &[BackendChoice] = &[
     //BackendChoice::LibTorchGpu,

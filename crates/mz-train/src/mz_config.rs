@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use strum::AsRefStr;
 
 pub use mz_core::config::{
-    LinearSubConfig, NetConfig, NetworkSubConfig, NetworkType, ProjectionSubConfig, ResNetSubConfig,
+    LinearSubConfig, NetConfig, NetworkSubConfig, NetworkType, ProjectionSubConfig,
+    ResNetBlockConfig, ResNetRepresentationConfig, ResNetSubConfig,
 };
 
 use crate::{

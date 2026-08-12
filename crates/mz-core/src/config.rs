@@ -23,10 +23,23 @@ pub struct LinearSubConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct ResNetSubConfig {
+pub struct ResNetRepresentationConfig {
+    pub channels: usize,
+    pub n_blocks: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ResNetBlockConfig {
     pub channels: usize,
     pub n_blocks: usize,
     pub fc_hidden_size: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ResNetSubConfig {
+    pub representation: ResNetRepresentationConfig,
+    pub dynamic: ResNetBlockConfig,
+    pub prediction: ResNetBlockConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
