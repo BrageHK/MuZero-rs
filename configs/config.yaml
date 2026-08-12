@@ -24,11 +24,11 @@ resnet:
     dynamic:
         channels: 64
         n_blocks: 2
-        fc_hidden_size: 256
+        fc_hidden_size: 1024
     prediction:
         channels: 64
         n_blocks: 10
-        fc_hidden_size: 256
+        fc_hidden_size: 1024
 
 # SimSiam: For ResNet the projector reduces channels and pools to 6x6
 projection:
