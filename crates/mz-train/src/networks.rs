@@ -27,7 +27,7 @@ macro_rules! with_net {
     ($mz_conf:expr, $N:ident => $body:expr) => {
         match $mz_conf.network_type {
             $crate::mz_config::NetworkType::Linear => {
-                type $N<B> = $crate::agent::MlpNets<B>;
+                type $N<B> = $crate::networks::mlp::MlpNets<B>;
                 $body
             }
             $crate::mz_config::NetworkType::ResNet => {

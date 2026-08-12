@@ -1,18 +1,27 @@
+pub mod dynamics;
+pub mod prediction;
+pub mod projection;
+pub mod representation;
+pub mod resblock;
+
 use burn::{
     Tensor,
     config::Config,
     module::Module,
     nn::{
-        BatchNorm, BatchNormConfig, Linear, LinearConfig, PaddingConfig2d, Relu,
+        BatchNormConfig, LinearConfig, PaddingConfig2d, Relu,
         conv::{Conv2d, Conv2dConfig},
     },
-    tensor::{IndexingUpdateOp, Int, backend::Backend},
+    tensor::{Int, backend::Backend},
 };
 
 use crate::config::NetConfig;
 use crate::networks::MuZeroNets;
-use crate::networks::projector::{ConvProjection, ConvProjectionConfig};
-use crate::networks::resblock::{ResBlock, ResBlockConfig};
+use crate::networks::resnet::dynamics::ResNetDynamics;
+use crate::networks::resnet::prediction::ResNetPrediction;
+use crate::networks::resnet::projection::{ConvProjection, ConvProjectionConfig};
+use crate::networks::resnet::representation::ResNetRepresentation;
+use crate::networks::resnet::resblock::{ResBlock, ResBlockConfig};
 
 #[derive(Config, Debug)]
 pub struct ResNetConfig {
@@ -30,120 +39,14 @@ pub struct ResNetConfig {
     pub pred_hidden: usize,
 }
 
-fn conv3x3<B: Backend>(c_in: usize, c_out: usize, device: &B::Device) -> Conv2d<B> {
+pub(super) fn conv3x3<B: Backend>(c_in: usize, c_out: usize, device: &B::Device) -> Conv2d<B> {
     Conv2dConfig::new([c_in, c_out], [3, 3])
         .with_padding(PaddingConfig2d::Same)
         .init(device)
 }
 
-fn conv1x1<B: Backend>(c_in: usize, c_out: usize, device: &B::Device) -> Conv2d<B> {
+pub(super) fn conv1x1<B: Backend>(c_in: usize, c_out: usize, device: &B::Device) -> Conv2d<B> {
     Conv2dConfig::new([c_in, c_out], [1, 1]).init(device)
-}
-
-#[derive(Module, Debug)]
-pub struct ResNetRepresentation<B: Backend> {
-    stem: Conv2d<B>,
-    stem_bn: BatchNorm<B>,
-    blocks: Vec<ResBlock<B>>,
-    relu: Relu,
-}
-
-impl<B: Backend> ResNetRepresentation<B> {
-    pub fn forward(&self, obs: Tensor<B, 4>) -> Tensor<B, 4> {
-        let mut x = self
-            .relu
-            .forward(self.stem_bn.forward(self.stem.forward(obs)));
-        for block in &self.blocks {
-            x = block.forward(x);
-        }
-        x
-    }
-}
-
-#[derive(Module, Debug)]
-pub struct ResNetDynamics<B: Backend> {
-    fuse: Conv2d<B>,
-    fuse_bn: BatchNorm<B>,
-    blocks: Vec<ResBlock<B>>,
-    reward_conv: Conv2d<B>,
-    reward_bn: BatchNorm<B>,
-    reward_fc1: Linear<B>,
-    reward_fc2: Linear<B>,
-    relu: Relu,
-}
-
-impl<B: Backend> ResNetDynamics<B> {
-    /// Returns (hidden_state, reward).
-    pub fn forward(
-        &self,
-        hidden: Tensor<B, 4>,
-        action: Tensor<B, 1, Int>,
-        action_size: usize,
-    ) -> (Tensor<B, 4>, Tensor<B, 2>) {
-        let [n, _, h, w] = hidden.dims();
-        let device = hidden.device();
-        let action_planes = Tensor::<B, 2>::zeros([n, action_size], &device)
-            .scatter(
-                1,
-                action.reshape([n, 1]),
-                Tensor::<B, 2>::ones([n, 1], &device),
-                IndexingUpdateOp::Add,
-            )
-            .reshape([n, action_size, 1, 1])
-            .expand([n, action_size, h, w]);
-
-        let x = Tensor::cat(vec![hidden, action_planes], 1);
-        let mut x = self
-            .relu
-            .forward(self.fuse_bn.forward(self.fuse.forward(x)));
-        for block in &self.blocks {
-            x = block.forward(x);
-        }
-
-        let reward = self
-            .relu
-            .forward(self.reward_bn.forward(self.reward_conv.forward(x.clone())));
-        let reward = reward.reshape([n as i32, -1]);
-        let reward = self.relu.forward(self.reward_fc1.forward(reward));
-        let reward = self.reward_fc2.forward(reward);
-
-        (x, reward)
-    }
-}
-
-#[derive(Module, Debug)]
-pub struct ResNetPrediction<B: Backend> {
-    policy_conv: Conv2d<B>,
-    policy_bn: BatchNorm<B>,
-    policy_fc: Linear<B>,
-    value_conv: Conv2d<B>,
-    value_bn: BatchNorm<B>,
-    value_fc1: Linear<B>,
-    value_fc2: Linear<B>,
-    relu: Relu,
-}
-
-impl<B: Backend> ResNetPrediction<B> {
-    /// Returns (value_logits, policy_logits)
-    pub fn forward(&self, hidden: Tensor<B, 4>) -> (Tensor<B, 2>, Tensor<B, 2>) {
-        let n = hidden.dims()[0] as i32;
-
-        let policy = self.relu.forward(
-            self.policy_bn
-                .forward(self.policy_conv.forward(hidden.clone())),
-        );
-        let policy = self.policy_fc.forward(policy.reshape([n, -1]));
-
-        let value = self
-            .relu
-            .forward(self.value_bn.forward(self.value_conv.forward(hidden)));
-        let value = self
-            .relu
-            .forward(self.value_fc1.forward(value.reshape([n, -1])));
-        let value = self.value_fc2.forward(value);
-
-        (value, policy)
-    }
 }
 
 /// The ResNet (conv) MuZero network family.

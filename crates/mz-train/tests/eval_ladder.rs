@@ -3,7 +3,6 @@
 use burn::backend::NdArray;
 use burn::backend::ndarray::NdArrayDevice;
 
-use mz_rs::agent::MlpNets;
 use mz_rs::env::Environment;
 use mz_rs::env::othello::env::Othello;
 use mz_rs::env::tictactoe::env::TicTacToe;
@@ -11,6 +10,7 @@ use mz_rs::eval::EloLadder;
 use mz_rs::mz_config::{
     EnvironmentName, EvalConfig, GumbelSubConfig, MuZeroConfig, RungConfig, SearchAlgorithm,
 };
+use mz_rs::networks::mlp::MlpNets;
 
 fn config(environment: EnvironmentName, ladder: Vec<RungConfig>) -> MuZeroConfig {
     let (action_space, obs_dim) = match environment {

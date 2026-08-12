@@ -132,7 +132,10 @@ fn main() {
     println!("\n== grid summary: us/sample (batch x, backend y) ==");
     print_grid_transposed(&ran_backends, &results);
 
-    if let Some(best) = results.iter().min_by(|a, b| a.us_per_sample.total_cmp(&b.us_per_sample)) {
+    if let Some(best) = results
+        .iter()
+        .min_by(|a, b| a.us_per_sample.total_cmp(&b.us_per_sample))
+    {
         println!(
             "\nbest: backend={:?} batch={} ({:.3} us/sample)",
             best.backend, best.batch, best.us_per_sample

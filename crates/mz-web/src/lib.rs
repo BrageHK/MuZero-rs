@@ -2,7 +2,7 @@ pub mod model;
 pub mod rng;
 pub mod search;
 
-use mz_core::agent::MlpNets;
+use mz_core::networks::mlp::MlpNets;
 use mz_core::othello::{Othello, PASS};
 
 use crate::model::{Be, Device, SEARCH};

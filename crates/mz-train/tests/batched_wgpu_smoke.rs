@@ -1,8 +1,8 @@
 #![cfg(feature = "wgpu")]
 use burn::Tensor;
 use burn::backend::Wgpu;
-use mz_rs::agent::MlpNets;
 use mz_rs::mz_config::MuZeroConfig;
+use mz_rs::networks::mlp::MlpNets;
 use mz_rs::search::batched_search;
 
 #[test]

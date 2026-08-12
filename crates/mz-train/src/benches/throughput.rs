@@ -7,10 +7,10 @@ use burn::backend::{
 };
 use burn::tensor::backend::Backend;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use mz_rs::agent::MlpNets;
 use mz_rs::env::Environment;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
 use mz_rs::mz_config::MuZeroConfig;
+use mz_rs::networks::mlp::MlpNets;
 use mz_rs::search::batched_search;
 use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;

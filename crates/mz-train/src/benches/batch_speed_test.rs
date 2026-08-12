@@ -5,7 +5,7 @@ use burn::{
     Dispatch, Tensor,
     tensor::{Distribution, Shape, Transaction},
 };
-use mz_rs::agent::MlpNets;
+use mz_rs::networks::mlp::MlpNets;
 use mz_rs::mz_config::MuZeroConfig;
 use mz_rs::networks::MuZeroNets;
 use mz_rs::utils::select_device;

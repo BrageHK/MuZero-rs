@@ -5,7 +5,7 @@ use burn::backend::{
 };
 use burn::tensor::Tensor;
 use criterion::{Criterion, criterion_group, criterion_main};
-use mz_rs::{agent::MlpNets, mz_config::MuZeroConfig, search::batched_search};
+use mz_rs::{mz_config::MuZeroConfig, networks::mlp::MlpNets, search::batched_search};
 use std::hint::black_box;
 
 // Compares MCTS search speed on the GPU (Wgpu) backend vs the CPU (NdArray)
