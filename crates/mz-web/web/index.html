@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MuZero Othello</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -38,10 +39,18 @@
           </select>
         </label>
         <label class="sims">
-          <span>Simulations <b id="sims-value">16</b></span>
-          <input id="sims" type="range" min="8" max="128" step="8" value="16" />
+          <span>Simulations</span>
+          <select id="sims">
+            <option value="8">Low (8)</option>
+            <option value="64">Medium (64)</option>
+            <option value="128" selected>Standard (128)</option>
+            <option value="256">High (256)</option>
+            <option value="800">Maximum (800)</option>
+          </select>
         </label>
       </div>
+
+      <p class="hint">More simulations means stronger play but longer thinking time per move.</p>
 
       <p class="eval" id="eval"></p>
     </main>

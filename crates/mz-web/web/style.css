@@ -230,9 +230,10 @@ label {
   font-variant-numeric: tabular-nums;
 }
 
-input[type="range"] {
-  width: 110px;
-  accent-color: var(--accent);
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .eval {

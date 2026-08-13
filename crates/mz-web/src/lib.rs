@@ -45,7 +45,7 @@ pub async fn create(simulations: u32) -> Game {
         env: Othello::new(),
         net: model::load(&device),
         device,
-        simulations: (simulations as usize).clamp(1, 512),
+        simulations: (simulations as usize).clamp(1, 800),
         history: Vec::new(),
         last_move: None,
     }
@@ -107,7 +107,7 @@ impl Game {
     }
 
     pub fn set_simulations(&mut self, simulations: u32) {
-        self.simulations = (simulations as usize).clamp(1, 512);
+        self.simulations = (simulations as usize).clamp(1, 800);
     }
 
     pub fn play(&mut self, action: usize) -> bool {

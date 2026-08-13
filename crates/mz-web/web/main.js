@@ -12,7 +12,6 @@ const undoEl = document.getElementById("undo");
 const newGameEl = document.getElementById("new-game");
 const colourEl = document.getElementById("colour");
 const simsEl = document.getElementById("sims");
-const simsValueEl = document.getElementById("sims-value");
 
 const PASS = 64;
 const FILES = "abcdefgh";
@@ -168,8 +167,7 @@ newGameEl.addEventListener("click", async () => {
 
 colourEl.addEventListener("change", () => newGameEl.click());
 
-simsEl.addEventListener("input", () => {
-  simsValueEl.textContent = simsEl.value;
+simsEl.addEventListener("change", () => {
   if (game && !busy) {
     game.set_simulations(Number(simsEl.value));
   }
@@ -179,11 +177,10 @@ async function main() {
   await init();
   const hasWebGpu = "gpu" in navigator;
   game = await create(Number(simsEl.value));
-  simsEl.value = game.simulations();
-  simsValueEl.textContent = simsEl.value;
+  simsEl.value = String(game.simulations());
   backendEl.textContent = hasWebGpu
     ? "WebGPU · Gumbel MuZero"
-    : "no WebGPU in this browser — SIMD CPU inference via WASM (rebuild with --features flex)";
+    : "Gumbel MuZero — SIMD CPU inference via WASM";
   render();
   await settle();
 }

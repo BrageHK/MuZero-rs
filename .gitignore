@@ -31,5 +31,7 @@ psudocode/*
 .vscode
 build/
 model/
+model.bak/
+model_1/
 vendor/
 crates/mz-web/web/pkg/
