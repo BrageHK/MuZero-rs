@@ -14,4 +14,4 @@
 - [x] WASM website for Othello
 - [ ] Chess support
 - [ ] WASM chess
-- [ ] Add support for ALE
+- [x] Add support for ALE

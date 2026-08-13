@@ -98,6 +98,23 @@ header h1 {
   font-size: 13px;
 }
 
+.spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(8, 1fr);

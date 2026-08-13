@@ -1,34 +1,39 @@
+pub type Net<B> = mz_core::networks::resnet::ResNets<B>;
+
 pub const NET: NetConfig = NetConfig {
-    network_type: NetworkType::Linear,
-    obs_dim: 64,
+    network_type: NetworkType::ResNet,
+    obs_dim: 192,
     action_space: 65,
     support_size: 35,
     categorical: false,
     board_height: 8,
     board_width: 8,
-    obs_channels: 1,
-    linear: Some(LinearSubConfig {
-        representation: NetworkSubConfig {
-            latent_space_dims: 32,
-            fc_hidden_size: 32,
-            n_layers: 3,
+    obs_channels: 3,
+    linear: None,
+    resnet: Some(ResNetSubConfig {
+        representation: ResNetRepresentationConfig {
+            channels: 64,
+            n_blocks: 15,
+            gpool: GPoolConfig { every: 3, pool_channels: 16 },
         },
-        dynamic: NetworkSubConfig {
-            latent_space_dims: 32,
-            fc_hidden_size: 32,
-            n_layers: 3,
+        dynamic: ResNetBlockConfig {
+            channels: 64,
+            n_blocks: 2,
+            fc_hidden_size: 1024,
+            gpool: GPoolConfig { every: 0, pool_channels: 0 },
         },
-        prediction: NetworkSubConfig {
-            latent_space_dims: 32,
-            fc_hidden_size: 64,
-            n_layers: 3,
+        prediction: ResNetBlockConfig {
+            channels: 64,
+            n_blocks: 10,
+            fc_hidden_size: 1024,
+            gpool: GPoolConfig { every: 0, pool_channels: 0 },
         },
+        head_gpool: HeadPoolConfig { policy_channels: 16, value_channels: 16 },
     }),
-    resnet: None,
     projection: ProjectionSubConfig {
-        proj_hidden: 256,
-        proj_out: 64,
-        pred_hidden: 128,
+        proj_hidden: 128,
+        proj_out: 32,
+        pred_hidden: 64,
     },
 };
 
@@ -36,7 +41,7 @@ pub const SEARCH: SearchParams = SearchParams {
     num_simulations: 16,
     action_space: 65,
     support_size: 35,
-    discount: 0.997,
+    discount: 1.0,
     max_num_considered_actions: 8,
     c_visit: 50.0,
     c_scale: 0.1,

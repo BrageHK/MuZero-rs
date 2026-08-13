@@ -2,10 +2,9 @@ pub mod model;
 pub mod rng;
 pub mod search;
 
-use mz_core::networks::mlp::MlpNets;
 use mz_core::othello::{Othello, PASS};
 
-use crate::model::{Be, Device, SEARCH};
+use crate::model::{Be, Device, Net, SEARCH};
 use crate::rng::Rng;
 use crate::search::gumbel_search;
 
@@ -26,7 +25,7 @@ pub struct AgentMove {
 #[cfg_attr(target_family = "wasm", wasm_bindgen::prelude::wasm_bindgen)]
 pub struct Game {
     env: Othello,
-    net: MlpNets<Be>,
+    net: Net<Be>,
     device: Device,
     simulations: usize,
     history: Vec<Othello>,

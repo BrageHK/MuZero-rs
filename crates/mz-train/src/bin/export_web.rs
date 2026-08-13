@@ -10,8 +10,8 @@ use std::path::Path;
 use burn::backend::NdArray;
 use burn::module::Module;
 use burn::record::{BinFileRecorder, CompactRecorder, HalfPrecisionSettings, Recorder};
-use mz_rs::mz_config::{EnvironmentName, MuZeroConfig, SearchAlgorithm};
-use mz_rs::networks::mlp::MlpNets;
+use mz_rs::mz_config::{EnvironmentName, MuZeroConfig, NetworkType, SearchAlgorithm};
+use mz_rs::with_net;
 
 type B = NdArray;
 
@@ -35,31 +35,92 @@ fn main() {
         .unwrap_or_else(|| format!("model/{}/latest", mz_conf.environment.as_ref()));
     let device = Default::default();
 
-    // The training binaries always build MlpNets, whatever `network_type` says.
-    let agent: MlpNets<B> = mz_conf.init(&device);
-    let agent = agent
-        .load_file(&checkpoint, &CompactRecorder::new(), &device)
-        .unwrap_or_else(|e| panic!("Failed to load checkpoint '{checkpoint}': {e}"));
-
     fs::create_dir_all(ASSETS).expect("Failed to create the assets directory");
     let weights = Path::new(ASSETS).join("othello");
-    BinFileRecorder::<HalfPrecisionSettings>::new()
-        .record(agent.into_record(), weights.clone())
-        .expect("Failed to write the web weights");
+
+    // The checkpoint was trained with whatever `network_type` says, so the
+    // export must build the matching family or the record fields won't line up.
+    with_net!(mz_conf, Net => {
+        let agent: Net<B> = mz_conf.init(&device);
+        let agent = agent
+            .load_file(&checkpoint, &CompactRecorder::new(), &device)
+            .unwrap_or_else(|e| panic!("Failed to load checkpoint '{checkpoint}': {e}"));
+        BinFileRecorder::<HalfPrecisionSettings>::new()
+            .record(agent.into_record(), weights.clone())
+            .expect("Failed to write the web weights");
+    });
+
+    let net_family_path = match mz_conf.network_type {
+        NetworkType::Linear => "mz_core::networks::mlp::MlpNets",
+        NetworkType::ResNet => "mz_core::networks::resnet::ResNets",
+    };
 
     let net = mz_conf.net_config();
-    let linear = net.linear();
     let gumbel = mz_conf.gumbel();
+
     let layer = |name: &str, conf: &mz_rs::mz_config::NetworkSubConfig| {
         format!(
             "        {name}: NetworkSubConfig {{\n            latent_space_dims: {},\n            fc_hidden_size: {},\n            n_layers: {},\n        }},\n",
             conf.latent_space_dims, conf.fc_hidden_size, conf.n_layers
         )
     };
+    let gpool_repr = |every: usize, pool_channels: usize| {
+        format!("GPoolConfig {{ every: {every}, pool_channels: {pool_channels} }}")
+    };
+
+    let (network_type, linear_field, resnet_field) = match mz_conf.network_type {
+        NetworkType::Linear => {
+            let linear = net.linear();
+            let repr = layer("representation", &linear.representation);
+            let dynamic = layer("dynamic", &linear.dynamic);
+            let prediction = layer("prediction", &linear.prediction);
+            (
+                "NetworkType::Linear",
+                format!("Some(LinearSubConfig {{\n{repr}{dynamic}{prediction}\x20   }})"),
+                "None".to_string(),
+            )
+        }
+        NetworkType::ResNet => {
+            let resnet = net.resnet();
+            let repr = format!(
+                "        representation: ResNetRepresentationConfig {{\n            channels: {},\n            n_blocks: {},\n            gpool: {},\n        }},\n",
+                resnet.representation.channels,
+                resnet.representation.n_blocks,
+                gpool_repr(
+                    resnet.representation.gpool.every,
+                    resnet.representation.gpool.pool_channels
+                ),
+            );
+            let block = |name: &str, conf: &mz_rs::mz_config::ResNetBlockConfig| {
+                format!(
+                    "        {name}: ResNetBlockConfig {{\n            channels: {},\n            n_blocks: {},\n            fc_hidden_size: {},\n            gpool: {},\n        }},\n",
+                    conf.channels,
+                    conf.n_blocks,
+                    conf.fc_hidden_size,
+                    gpool_repr(conf.gpool.every, conf.gpool.pool_channels),
+                )
+            };
+            let dynamic = block("dynamic", &resnet.dynamic);
+            let prediction = block("prediction", &resnet.prediction);
+            let head_gpool = format!(
+                "HeadPoolConfig {{ policy_channels: {}, value_channels: {} }}",
+                resnet.head_gpool.policy_channels, resnet.head_gpool.value_channels
+            );
+            (
+                "NetworkType::ResNet",
+                "None".to_string(),
+                format!(
+                    "Some(ResNetSubConfig {{\n{repr}{dynamic}{prediction}\x20       head_gpool: {head_gpool},\n\x20   }})"
+                ),
+            )
+        }
+    };
 
     let generated = format!(
-        "pub const NET: NetConfig = NetConfig {{\n\
-         \x20   network_type: NetworkType::Linear,\n\
+        "pub type Net<B> = {net_family_path}<B>;\n\
+         \n\
+         pub const NET: NetConfig = NetConfig {{\n\
+         \x20   network_type: {network_type},\n\
          \x20   obs_dim: {obs_dim},\n\
          \x20   action_space: {action_space},\n\
          \x20   support_size: {support_size},\n\
@@ -67,8 +128,8 @@ fn main() {
          \x20   board_height: {board_height},\n\
          \x20   board_width: {board_width},\n\
          \x20   obs_channels: {obs_channels},\n\
-         \x20   linear: Some(LinearSubConfig {{\n{repr}{dynamic}{prediction}\x20   }}),\n\
-         \x20   resnet: None,\n\
+         \x20   linear: {linear_field},\n\
+         \x20   resnet: {resnet_field},\n\
          \x20   projection: ProjectionSubConfig {{\n\
          \x20       proj_hidden: {proj_hidden},\n\
          \x20       proj_out: {proj_out},\n\
@@ -93,9 +154,6 @@ fn main() {
         board_height = net.board_height,
         board_width = net.board_width,
         obs_channels = net.obs_channels,
-        repr = layer("representation", &linear.representation),
-        dynamic = layer("dynamic", &linear.dynamic),
-        prediction = layer("prediction", &linear.prediction),
         proj_hidden = net.projection.proj_hidden,
         proj_out = net.projection.proj_out,
         pred_hidden = net.projection.pred_hidden,

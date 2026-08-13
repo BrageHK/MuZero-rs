@@ -78,7 +78,7 @@ function render() {
           ? `you win ${humanScore}–${agentScore}`
           : `agent wins ${agentScore}–${humanScore}`;
   } else if (busy) {
-    statusEl.textContent = "thinking…";
+    statusEl.innerHTML = '<span class="spinner"></span> thinking…';
   } else if (humanTurn()) {
     statusEl.textContent = game.must_pass() ? "no move — passing" : "your move";
   } else {
@@ -86,11 +86,30 @@ function render() {
   }
 }
 
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Search with few simulations can finish in a handful of milliseconds, too
+// fast to see. Hold the "thinking" spinner up for a floor so the human's
+// stone visibly lands before the agent's does.
+const MIN_THINK_MS = 400;
+
 async function agentTurn() {
   busy = true;
   render();
+  // Force the human's stone + "thinking" spinner to paint before the search
+  // (often synchronous GPU work) blocks the main thread.
+  await nextFrame();
   // A fresh seed per move: the Gumbel noise is the agent's exploration.
-  const move = await game.think(1 + Math.floor(Math.random() * 2 ** 40));
+  const [move] = await Promise.all([
+    game.think(1 + Math.floor(Math.random() * 2 ** 40)),
+    delay(MIN_THINK_MS),
+  ]);
   const { action, value } = move;
   move.free();
   game.play(action);
@@ -163,8 +182,8 @@ async function main() {
   simsEl.value = game.simulations();
   simsValueEl.textContent = simsEl.value;
   backendEl.textContent = hasWebGpu
-    ? "WebGPU · Gumbel MuZero, 65 actions, 32-dim latent"
-    : "no WebGPU in this browser — rebuild with --features flex for the CPU backend";
+    ? "WebGPU · Gumbel MuZero"
+    : "no WebGPU in this browser — SIMD CPU inference via WASM (rebuild with --features flex)";
   render();
   await settle();
 }
