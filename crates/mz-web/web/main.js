@@ -1,5 +1,3 @@
-import init, { create } from "./pkg/mz_web.js";
-
 const boardEl = document.getElementById("board");
 const statusEl = document.getElementById("status");
 const backendEl = document.getElementById("backend");
@@ -20,6 +18,10 @@ let game = null;
 let humanIsBlack = true;
 let busy = false;
 
+function humanTurn() {
+  return game.black_to_move() === humanIsBlack;
+}
+
 const cells = Array.from({ length: 64 }, (_, square) => {
   const cell = document.createElement("button");
   cell.className = "cell";
@@ -31,10 +33,6 @@ const cells = Array.from({ length: 64 }, (_, square) => {
 
 function label(action) {
   return action === PASS ? "pass" : `${FILES[action % 8]}${Math.floor(action / 8) + 1}`;
-}
-
-function humanTurn() {
-  return game.black_to_move() === humanIsBlack;
 }
 
 function render() {
@@ -75,13 +73,13 @@ function render() {
         ? `draw ${black}–${white}`
         : humanScore > agentScore
           ? `you win ${humanScore}–${agentScore}`
-          : `agent wins ${agentScore}–${humanScore}`;
+          : `MuZero wins ${agentScore}–${humanScore}`;
   } else if (busy) {
-    statusEl.innerHTML = '<span class="spinner"></span> thinking…';
+    statusEl.innerHTML = `<span class="spinner"></span> MuZero thinking…`;
   } else if (humanTurn()) {
     statusEl.textContent = game.must_pass() ? "no move — passing" : "your move";
   } else {
-    statusEl.textContent = "agent to move";
+    statusEl.textContent = "MuZero to move";
   }
 }
 
@@ -113,13 +111,13 @@ async function agentTurn() {
   move.free();
   game.play(action);
   const winProb = ((1 - value) / 2) * 100;
-  evalEl.textContent = `agent played ${label(action)} · it rates your position ${winProb.toFixed(0)}%`;
+  evalEl.textContent = `MuZero played ${label(action)} · it rates its position ${winProb.toFixed(0)}%`;
   busy = false;
   render();
   await settle();
 }
 
-/// Plays out forced passes and hands the turn over until a human move is needed.
+/// Plays out forced passes and hands the turn over until the human needs to move.
 async function settle() {
   if (game.is_over() || busy) {
     return;
@@ -173,14 +171,42 @@ simsEl.addEventListener("change", () => {
   }
 });
 
+// WebGPU existence isn't enough — requestAdapter() can still resolve null (or
+// throw) on a blocklisted or broken GPU, so probe it for real.
+async function detectWebGpu() {
+  if (!("gpu" in navigator)) {
+    return false;
+  }
+  try {
+    return (await navigator.gpu.requestAdapter()) !== null;
+  } catch {
+    return false;
+  }
+}
+
+// Two separate wasm builds ship the WebGPU and CPU-SIMD (flex) backends —
+// burn's backend type is picked at compile time, so there's no way to switch
+// between them inside a single binary. Pick whichever one actually works.
+async function loadBackend() {
+  if (await detectWebGpu()) {
+    try {
+      const mod = await import("./pkg-webgpu/mz_web.js");
+      await mod.default();
+      return { mod, label: "WebGPU · Gumbel MuZero" };
+    } catch (error) {
+      console.warn("WebGPU backend failed to load, falling back to CPU SIMD", error);
+    }
+  }
+  const mod = await import("./pkg-flex/mz_web.js");
+  await mod.default();
+  return { mod, label: "Gumbel MuZero — SIMD CPU inference via WASM" };
+}
+
 async function main() {
-  await init();
-  const hasWebGpu = "gpu" in navigator;
-  game = await create(Number(simsEl.value));
+  const { mod, label } = await loadBackend();
+  game = await mod.create(Number(simsEl.value));
   simsEl.value = String(game.simulations());
-  backendEl.textContent = hasWebGpu
-    ? "WebGPU · Gumbel MuZero"
-    : "Gumbel MuZero — SIMD CPU inference via WASM";
+  backendEl.textContent = label;
   render();
   await settle();
 }

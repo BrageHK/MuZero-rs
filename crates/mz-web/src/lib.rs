@@ -1,10 +1,12 @@
 pub mod model;
+pub mod opponent;
 pub mod rng;
 pub mod search;
 
 use mz_core::othello::{Othello, PASS};
 
 use crate::model::{Be, Device, Net, SEARCH};
+use crate::opponent::Opponent;
 use crate::rng::Rng;
 use crate::search::gumbel_search;
 
@@ -30,6 +32,7 @@ pub struct Game {
     simulations: usize,
     history: Vec<Othello>,
     last_move: Option<usize>,
+    opponent: Opponent,
 }
 
 // The wasm shims assert this for every exported `&self` method. Nothing here is
@@ -48,6 +51,7 @@ pub async fn create(simulations: u32) -> Game {
         simulations: (simulations as usize).clamp(1, 800),
         history: Vec::new(),
         last_move: None,
+        opponent: Opponent::from_depth(0),
     }
 }
 
@@ -162,5 +166,19 @@ impl Game {
 
     pub fn pass_action(&self) -> u32 {
         PASS as u32
+    }
+
+    /// Selects a bot-battle opponent: depth 0 is random, any other depth is
+    /// alpha-beta search at that depth.
+    pub fn set_opponent(&mut self, depth: u32) {
+        self.opponent = Opponent::from_depth(depth);
+    }
+
+    /// Picks the benchmark opponent's move for the side to move; commit it with
+    /// `play`. Search is synchronous CPU alpha-beta, no GPU readback needed.
+    pub fn bot_move(&self, seed: f64) -> u32 {
+        let seed = (seed.abs() as u64).max(1);
+        let mut rng = Rng::new(seed);
+        self.opponent.choose(&self.env, &mut rng) as u32
     }
 }

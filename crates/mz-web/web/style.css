@@ -33,6 +33,35 @@ main {
   gap: 20px;
 }
 
+main.arena-page {
+  width: min(94vw, 900px);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: -4px;
+}
+
+.tab {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.active {
+  color: var(--text);
+  border-color: var(--line);
+  background: var(--panel);
+}
+
 header h1 {
   margin: 0;
   font-size: 19px;
@@ -80,6 +109,23 @@ header h1 {
   width: 14px;
   height: 14px;
   border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.side-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.side .name {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.side.active .name {
+  color: var(--text);
 }
 
 .disc.black {
@@ -220,6 +266,10 @@ label {
   font-size: 13px;
 }
 
+label[hidden] {
+  display: none;
+}
+
 .sims {
   margin-left: auto;
 }
@@ -246,4 +296,81 @@ label {
 
 .busy .cell.legal {
   cursor: progress;
+}
+
+.toggle-fight {
+  border-color: #1f8a4c;
+  color: #4fd489;
+}
+
+.toggle-fight:hover:not(:disabled) {
+  border-color: #29a75d;
+}
+
+.toggle-fight.running {
+  border-color: #a73333;
+  color: #f06a6a;
+}
+
+.toggle-fight.running:hover {
+  border-color: #c23e3e;
+}
+
+.arena {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 180px;
+  gap: 20px;
+  align-items: start;
+}
+
+.arena-board {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.fighter {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.fighter h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fighter h2 .disc {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.fighter label {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.fighter select {
+  width: 100%;
+}
+
+@media (max-width: 680px) {
+  .arena {
+    grid-template-columns: 1fr;
+  }
+
+  .arena-board {
+    order: -1;
+  }
 }

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MuZero Othello — Bot Arena</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="arena-page">
+      <nav class="tabs">
+        <a class="tab" href="./index.html">Play</a>
+        <a class="tab active" href="./arena.html">Bot Arena</a>
+      </nav>
+
+      <header>
+        <h1>Bot Arena</h1>
+        <p class="sub" id="backend">loading agent…</p>
+      </header>
+
+      <div class="arena">
+        <aside class="fighter" data-side="black">
+          <h2><span class="disc black"></span> Black</h2>
+          <label>
+            <span>Fighter</span>
+            <select id="fighter-black">
+              <option value="muzero" selected>MuZero</option>
+              <option value="alphabeta">Alpha-Beta</option>
+              <option value="random">Random</option>
+            </select>
+          </label>
+          <label class="sims-field" id="sims-field-black">
+            <span>Simulations</span>
+            <select id="sims-black">
+              <option value="8">Low (8)</option>
+              <option value="64">Medium (64)</option>
+              <option value="128" selected>Standard (128)</option>
+              <option value="256">High (256)</option>
+              <option value="800">Maximum (800)</option>
+            </select>
+          </label>
+          <label class="depth-field" id="depth-field-black" hidden>
+            <span>Depth</span>
+            <select id="depth-black">
+              <option value="1">Easy (1)</option>
+              <option value="3">Medium (3)</option>
+              <option value="5">Hard (5)</option>
+              <option value="10">Very hard (10)</option>
+              <option value="15">Extreme (15)</option>
+            </select>
+          </label>
+        </aside>
+
+        <div class="arena-board">
+          <div class="score">
+            <div class="side" id="side-black">
+              <span class="disc black"></span>
+              <div class="side-text">
+                <span class="count" id="count-black">2</span>
+                <span class="name" id="name-black">MuZero · 128</span>
+              </div>
+            </div>
+            <div class="status" id="status">ready</div>
+            <div class="side" id="side-white">
+              <div class="side-text">
+                <span class="count" id="count-white">2</span>
+                <span class="name" id="name-white">Hard</span>
+              </div>
+              <span class="disc white"></span>
+            </div>
+          </div>
+
+          <div class="board" id="board" aria-label="Othello board"></div>
+
+          <div class="controls">
+            <button id="new-game">New fight</button>
+            <button id="toggle-fight" class="toggle-fight">Start fight</button>
+          </div>
+
+          <p class="eval" id="eval"></p>
+        </div>
+
+        <aside class="fighter" data-side="white">
+          <h2><span class="disc white"></span> White</h2>
+          <label>
+            <span>Fighter</span>
+            <select id="fighter-white">
+              <option value="muzero">MuZero</option>
+              <option value="alphabeta" selected>Alpha-Beta</option>
+              <option value="random">Random</option>
+            </select>
+          </label>
+          <label class="sims-field" id="sims-field-white" hidden>
+            <span>Simulations</span>
+            <select id="sims-white">
+              <option value="8">Low (8)</option>
+              <option value="64">Medium (64)</option>
+              <option value="128" selected>Standard (128)</option>
+              <option value="256">High (256)</option>
+              <option value="800">Maximum (800)</option>
+            </select>
+          </label>
+          <label class="depth-field" id="depth-field-white">
+            <span>Depth</span>
+            <select id="depth-white">
+              <option value="1">Easy (1)</option>
+              <option value="3">Medium (3)</option>
+              <option value="5" selected>Hard (5)</option>
+              <option value="10">Very hard (10)</option>
+              <option value="15">Extreme (15)</option>
+            </select>
+          </label>
+        </aside>
+      </div>
+
+      <p class="hint">Pick a fighter for each side — MuZero at any simulation count, or a benchmark bot — then start the fight.</p>
+    </main>
+    <script type="module" src="./arena.js"></script>
+  </body>
+</html>

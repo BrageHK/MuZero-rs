@@ -26,6 +26,23 @@ impl Rng {
     pub fn gumbel(&mut self) -> f32 {
         -(-self.next_f32().ln()).ln()
     }
+
+    /// Uniform in [0, 1).
+    pub fn unit(&mut self) -> f32 {
+        self.next_f32()
+    }
+
+    /// Uniform integer in [0, bound).
+    pub fn below(&mut self, bound: usize) -> usize {
+        (self.next_u64() % bound as u64) as usize
+    }
+
+    /// Fisher-Yates shuffle.
+    pub fn shuffle<T>(&mut self, slice: &mut [T]) {
+        for i in (1..slice.len()).rev() {
+            slice.swap(i, self.below(i + 1));
+        }
+    }
 }
 
 #[cfg(test)]

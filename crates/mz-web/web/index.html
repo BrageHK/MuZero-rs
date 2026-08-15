@@ -9,8 +9,13 @@
   </head>
   <body>
     <main>
+      <nav class="tabs">
+        <a class="tab active" href="./index.html">Play</a>
+        <a class="tab" href="./arena.html">Bot Arena</a>
+      </nav>
+
       <header>
-        <h1>MuZero Othello</h1>
+        <h1>Challenge MuZero</h1>
         <p class="sub" id="backend">loading agent…</p>
       </header>
 
@@ -32,7 +37,7 @@
         <button id="new-game">New game</button>
         <button id="undo" disabled>Undo</button>
         <label class="colour">
-          <span>Play</span>
+          <span>You play</span>
           <select id="colour">
             <option value="black" selected>black</option>
             <option value="white">white</option>
@@ -50,7 +55,7 @@
         </label>
       </div>
 
-      <p class="hint">More simulations means stronger play but longer thinking time per move.</p>
+      <p class="hint" id="hint">More simulations means stronger play but longer thinking time per move.</p>
 
       <p class="eval" id="eval"></p>
     </main>
