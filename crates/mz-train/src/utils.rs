@@ -1,6 +1,9 @@
 use std::collections::VecDeque;
 
 use burn::DispatchDevice;
+use burn::module::Module;
+use burn::record::CompactRecorder;
+use burn::tensor::backend::Backend;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -166,6 +169,68 @@ pub fn load_training_step(path: &str) -> usize {
         .trim()
         .parse()
         .expect("Failed to parse training step")
+}
+
+pub fn save_best_elo(elo: f32, path: &str) {
+    std::fs::write(path, elo.to_string()).expect("Failed to write best elo");
+}
+
+pub fn load_best_elo(path: &str) -> Option<f32> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+pub fn save_games_played(games: usize, path: &str) {
+    std::fs::write(path, games.to_string()).expect("Failed to write games played");
+}
+
+pub fn load_games_played(path: &str) -> Option<usize> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+pub fn save_env_steps(steps: usize, path: &str) {
+    std::fs::write(path, steps.to_string()).expect("Failed to write env steps");
+}
+
+pub fn load_env_steps(path: &str) -> Option<usize> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+/// Persists the ladder's current rung plus the last reading against it, so a
+/// resumed run keeps testing the same opponent instead of restarting at rung 0.
+pub fn save_eval_state(current_rung: usize, elo: f32, opponent: &str, path: &str) {
+    if let Some(dir) = std::path::Path::new(path).parent() {
+        std::fs::create_dir_all(dir).expect("Failed to create directory");
+    }
+    std::fs::write(path, format!("{current_rung}\n{elo}\n{opponent}"))
+        .expect("Failed to write eval state");
+}
+
+pub fn load_eval_state(path: &str) -> Option<(usize, f32, String)> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let mut lines = content.lines();
+    let current_rung = lines.next()?.trim().parse().ok()?;
+    let elo = lines.next()?.trim().parse().ok()?;
+    let opponent = lines.next().unwrap_or("").to_string();
+    Some((current_rung, elo, opponent))
+}
+
+/// Saves `net` as the new best-elo checkpoint (`model_best_{elo}`), removing
+/// the previous one so only one lingers per environment.
+pub fn save_best_model<B: Backend, M: Module<B>>(
+    dir: &str,
+    net: M,
+    elo: f32,
+    prev_best: Option<f32>,
+) {
+    std::fs::create_dir_all(dir).expect("Failed to create directory");
+    if let Some(prev) = prev_best {
+        let _ = std::fs::remove_file(format!("{dir}/model_best_{}", prev.round() as i64));
+    }
+    net.save_file(
+        format!("{dir}/model_best_{}", elo.round() as i64),
+        &CompactRecorder::new(),
+    )
+    .expect("Failed to save best model checkpoint");
 }
 
 #[cfg(test)]

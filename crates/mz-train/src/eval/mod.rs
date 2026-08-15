@@ -103,6 +103,16 @@ impl EloLadder {
         self.conf.interval > 0 && !self.rungs.is_empty()
     }
 
+    pub fn current(&self) -> usize {
+        self.current
+    }
+
+    pub fn set_current(&mut self, rung: usize) {
+        if rung < self.rungs.len() {
+            self.current = rung;
+        }
+    }
+
     pub fn due(&self, training_step: usize) -> bool {
         self.enabled() && training_step >= self.next_eval
     }

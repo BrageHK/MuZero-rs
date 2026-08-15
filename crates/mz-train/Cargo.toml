@@ -44,10 +44,8 @@ strum = "0.28.0"
 rmp-serde = "1.3.1"
 
 [features]
-# Pick backends for your system:
-#   cargo build --no-default-features --features ndarray,cuda
-default = ["ndarray", "wgpu"]
-ndarray = ["burn/ndarray", "mz-core/ndarray"]
+default = []
+ndarray = ["burn/ndarray", "burn/fusion", "mz-core/ndarray"]
 wgpu = ["burn/wgpu", "burn/fusion", "mz-core/wgpu"]
 metal = ["burn/metal", "burn/fusion", "mz-core/metal"]
 vulkan = ["burn/vulkan", "burn/fusion", "mz-core/vulkan"]

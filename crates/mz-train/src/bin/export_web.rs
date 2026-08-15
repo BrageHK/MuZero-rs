@@ -32,7 +32,7 @@ fn main() {
 
     let checkpoint = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| format!("model/{}/latest", mz_conf.environment.as_ref()));
+        .unwrap_or_else(|| format!("{}/latest", mz_conf.checkpoint_dir()));
     let device = Default::default();
 
     fs::create_dir_all(ASSETS).expect("Failed to create the assets directory");

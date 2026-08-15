@@ -29,7 +29,10 @@ use crate::replay_buffer::{BufferData, ReplayBuffer};
 use crate::search::batched_search;
 use crate::train::{reanalyze, reanalyze_due, train};
 use crate::tui_metrics::TrainingTui;
-use crate::utils::{lr_for_step, save_buffer, save_training_step, tau_for_step};
+use crate::utils::{
+    load_eval_state, lr_for_step, save_best_elo, save_best_model, save_buffer, save_env_steps,
+    save_eval_state, save_games_played, save_training_step, tau_for_step,
+};
 
 const RENDER_INTERVAL: Duration = Duration::from_millis(50);
 const WARMUP_POLL: Duration = Duration::from_millis(100);
@@ -62,6 +65,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
     inner_device: TrainB::Device,
     infer_device: InferB::Device,
     initial_training_step: usize,
+    initial_best_elo: f32,
 ) where
     E: Environment<Action = usize> + Default + Clone,
     TrainB: AutodiffBackend,
@@ -87,6 +91,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
                 weight_rx,
                 self_play_interrupter,
                 initial_training_step,
+                initial_best_elo,
             );
         });
 
@@ -119,6 +124,7 @@ fn self_play<E, InferB, N>(
     weights: Receiver<WeightMsg>,
     interrupter: Interrupter,
     initial_training_step: usize,
+    initial_best_elo: f32,
 ) where
     E: Environment<Action = usize> + Default + Clone,
     InferB: Backend,
@@ -128,6 +134,13 @@ fn self_play<E, InferB, N>(
     let mut agent: N = nets_from_bytes(initial_weights, &net_conf, &infer_device);
     let mut ladder = EloLadder::new(mz_conf);
     let mut training_step = initial_training_step;
+    let mut best_elo = initial_best_elo;
+    let ckpt_dir = mz_conf.checkpoint_dir();
+    if mz_conf.load_from_checkpoint
+        && let Some((rung, _, _)) = load_eval_state(&format!("{ckpt_dir}/eval_state"))
+    {
+        ladder.set_current(rung);
+    }
 
     let mut game_batch: Vec<Vec<BufferData>> = vec![Vec::new(); mz_conf.game_batch_size];
     let mut game_reward_batch = vec![0.0f32; mz_conf.game_batch_size];
@@ -213,6 +226,18 @@ fn self_play<E, InferB, N>(
 
         if ladder.due(training_step) {
             let reading = ladder.run(mz_conf, &agent, &infer_device, training_step);
+            if reading.elo > best_elo {
+                let prev_best = best_elo.is_finite().then_some(best_elo);
+                best_elo = reading.elo;
+                save_best_model(&ckpt_dir, agent.clone(), best_elo, prev_best);
+                save_best_elo(best_elo, &format!("{ckpt_dir}/best_elo"));
+            }
+            save_eval_state(
+                ladder.current(),
+                reading.elo,
+                &reading.opponent,
+                &format!("{ckpt_dir}/eval_state"),
+            );
             if tx.send(SelfPlayMsg::Eval(reading)).is_err() {
                 return;
             }
@@ -298,7 +323,15 @@ fn train_loop<TrainB, N>(
         }
 
         if mz_conf.checkpoint_interval > 0 && training_step >= next_checkpoint {
-            checkpoint(mz_conf, &agent, optimizer, buffer, training_step);
+            checkpoint(
+                mz_conf,
+                &agent,
+                optimizer,
+                buffer,
+                training_step,
+                tui.env_steps(),
+                tui.games_finished(),
+            );
             next_checkpoint += mz_conf.checkpoint_interval;
         }
 
@@ -359,12 +392,15 @@ fn render(
     *last_render = Instant::now();
 }
 
+#[allow(clippy::too_many_arguments)]
 fn checkpoint<TrainB, N>(
     mz_conf: &MuZeroConfig,
     agent: &N,
     optimizer: &AnyOptimizer<TrainB, N>,
     buffer: &ReplayBuffer,
     training_step: usize,
+    env_steps: usize,
+    games_finished: usize,
 ) where
     TrainB: AutodiffBackend,
     N: MuZeroNets<TrainB> + AutodiffModule<TrainB>,
@@ -380,4 +416,6 @@ fn checkpoint<TrainB, N>(
         .expect("Failed to save optimizer state");
     save_buffer(buffer, &format!("{path}/buffer.mpk"));
     save_training_step(training_step, &format!("{path}/training_step"));
+    save_env_steps(env_steps, &format!("{path}/env_steps"));
+    save_games_played(games_finished, &format!("{path}/games_played"));
 }

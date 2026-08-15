@@ -215,6 +215,8 @@ pub struct MuZeroConfig {
     pub grad_clip: f32,
     pub weight_decay: f32,
     pub momentum: f32,
+    #[serde(default = "default_eps")]
+    pub eps: f32,
     pub num_simulations: usize,
     #[serde(default = "default_support_size")]
     pub support_size: usize,
@@ -276,7 +278,7 @@ pub struct MuZeroConfig {
     pub async_training: bool,
 
     // Resumes networks, optimizer state, replay buffer, and training step from
-    // model/<environment>/. false => random init, fresh buffer, step 0.
+    // model/<environment>/<checkpoint_name>/. false => random init, fresh buffer, step 0.
     #[serde(default)]
     pub load_from_checkpoint: bool,
 
@@ -285,6 +287,8 @@ pub struct MuZeroConfig {
     pub training_backend: BackendChoice,
     #[serde(default)]
     pub inference_backend: BackendChoice,
+
+    pub checkpoint_name: String,
 
     // !!!! Never set these from the config! It will be overwritten by the chosen env.
     #[serde(default)]
@@ -315,6 +319,10 @@ fn default_reanalyze_pool() -> usize {
 
 fn default_support_size() -> usize {
     50
+}
+
+fn default_eps() -> f32 {
+    1e-5
 }
 
 fn default_value_coef() -> f32 {
@@ -379,6 +387,7 @@ fn validate(conf: &MuZeroConfig) {
         "weight_decay must be in [0, 1), got {}",
         conf.weight_decay
     );
+    assert!(conf.eps > 0.0, "eps must be > 0, got {}", conf.eps);
     assert!(
         conf.training_batch_size >= 1,
         "training_batch_size must be >= 1"
@@ -484,7 +493,25 @@ fn validate(conf: &MuZeroConfig) {
     }
 }
 
+fn strip_numeric_underscores(input: &str) -> String {
+    let chars: Vec<char> = input.chars().collect();
+    let mut out = String::with_capacity(input.len());
+    for i in 0..chars.len() {
+        let c = chars[i];
+        if c == '_' {
+            let prev_digit = i > 0 && chars[i - 1].is_ascii_digit();
+            let next_digit = i + 1 < chars.len() && chars[i + 1].is_ascii_digit();
+            if prev_digit && next_digit {
+                continue;
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn get_conf(file_content: String) -> MuZeroConfig {
+    let file_content = strip_numeric_underscores(&file_content);
     let mut conf: MuZeroConfig =
         serde_yaml::from_str(&file_content).expect("Failed to parse configs/config.yaml");
     validate(&conf);
@@ -588,9 +615,15 @@ impl MuZeroConfig {
     }
 
     /// Directory holding this environment's checkpoint files: `latest`, `optimizer`,
-    /// `buffer.mpk`, `training_step`.
+    /// `buffer.mpk`, `training_step`, `env_steps`, `games_played`, `best_elo`,
+    /// `model_best_{elo}`, `eval_state`, `config.yaml`. Namespaced under
+    /// `model/{environment}/{checkpoint_name}/`.
     pub fn checkpoint_dir(&self) -> String {
-        format!("model/{}", self.environment.as_ref())
+        format!(
+            "model/{}/{}",
+            self.environment.as_ref(),
+            self.checkpoint_name
+        )
     }
 
     /// Same as `init`, but loads weights from the checkpoint dir if `load_from_checkpoint`.

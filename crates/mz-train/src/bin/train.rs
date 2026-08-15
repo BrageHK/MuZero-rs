@@ -19,8 +19,9 @@ use mz_rs::search::batched_search;
 use mz_rs::train::{reanalyze, reanalyze_due, train};
 use mz_rs::tui_metrics::TrainingTui;
 use mz_rs::utils::{
-    load_buffer, load_training_step, lr_for_step, save_buffer, save_training_step, select_device,
-    tau_for_step,
+    load_best_elo, load_buffer, load_env_steps, load_eval_state, load_games_played,
+    load_training_step, lr_for_step, save_best_elo, save_best_model, save_buffer, save_env_steps,
+    save_eval_state, save_games_played, save_training_step, select_device, tau_for_step,
 };
 use mz_rs::{with_env, with_net};
 
@@ -64,10 +65,20 @@ fn run<E, TrainB, InferB, NT, NI>(
     NI: MuZeroNets<InferB>,
 {
     let ckpt_dir = mz_conf.checkpoint_dir();
+    std::fs::create_dir_all(&ckpt_dir).expect("Failed to create directory");
+    std::fs::write(
+        format!("{ckpt_dir}/config.yaml"),
+        serde_yaml::to_string(mz_conf).expect("Failed to serialize config"),
+    )
+    .expect("Failed to write config snapshot");
+
     let mut agent: NT = mz_conf.init_agent(&train_device);
     let mut optimizer = AnyOptimizer::<TrainB, NT>::new(mz_conf);
     let mut buffer = ReplayBuffer::new(mz_conf);
     let mut training_step = 0usize;
+    let mut best_elo = f32::NEG_INFINITY;
+    let mut env_steps = 0usize;
+    let mut games_played = 0usize;
     if mz_conf.load_from_checkpoint {
         let opt_path = format!("{ckpt_dir}/optimizer");
         match CompactRecorder::new().load(opt_path.clone().into(), &inner_device) {
@@ -76,11 +87,15 @@ fn run<E, TrainB, InferB, NT, NI>(
         }
         buffer.states = load_buffer(&format!("{ckpt_dir}/buffer.mpk"));
         training_step = load_training_step(&format!("{ckpt_dir}/training_step"));
+        best_elo = load_best_elo(&format!("{ckpt_dir}/best_elo")).unwrap_or(f32::NEG_INFINITY);
+        env_steps = load_env_steps(&format!("{ckpt_dir}/env_steps")).unwrap_or(0);
+        games_played = load_games_played(&format!("{ckpt_dir}/games_played")).unwrap_or(0);
     }
 
     let mut augmenter = Augmenter::from_config(mz_conf);
     let mut board_sym = BoardSymmetry::from_config(mz_conf);
     let mut tui = TrainingTui::new(mz_conf);
+    tui.seed_counts(env_steps, games_played, training_step);
 
     let training_steps_per_iteration = ((mz_conf.game_batch_size as f32
         / mz_conf.training_batch_size as f32
@@ -103,12 +118,18 @@ fn run<E, TrainB, InferB, NT, NI>(
             inner_device,
             infer_device,
             training_step,
+            best_elo,
         );
         return;
     }
 
     let mut inference_agent: NI = nets_to_backend(&agent.valid(), mz_conf, &infer_device);
     let mut ladder = EloLadder::new(mz_conf);
+    if mz_conf.load_from_checkpoint
+        && let Some((rung, _, _)) = load_eval_state(&format!("{ckpt_dir}/eval_state"))
+    {
+        ladder.set_current(rung);
+    }
 
     let mut game_batch: Vec<Vec<BufferData>> = vec![Vec::new(); mz_conf.game_batch_size];
     let mut game_reward_batch = vec![0.0f32; mz_conf.game_batch_size];
@@ -192,11 +213,25 @@ fn run<E, TrainB, InferB, NT, NI>(
             next_checkpoint += mz_conf.checkpoint_interval;
             save_buffer(&buffer, &format!("{ckpt_dir}/buffer.mpk"));
             save_training_step(training_step, &format!("{ckpt_dir}/training_step"));
+            save_env_steps(tui.env_steps(), &format!("{ckpt_dir}/env_steps"));
+            save_games_played(tui.games_finished(), &format!("{ckpt_dir}/games_played"));
         }
 
         // Evaluate against the benchmark opponent ladder
         if ladder.due(training_step) {
             let reading = ladder.run(mz_conf, &inference_agent, &infer_device, training_step);
+            if reading.elo > best_elo {
+                let prev_best = best_elo.is_finite().then_some(best_elo);
+                best_elo = reading.elo;
+                save_best_model(&ckpt_dir, inference_agent.clone(), best_elo, prev_best);
+                save_best_elo(best_elo, &format!("{ckpt_dir}/best_elo"));
+            }
+            save_eval_state(
+                ladder.current(),
+                reading.elo,
+                &reading.opponent,
+                &format!("{ckpt_dir}/eval_state"),
+            );
             tui.set_eval(&reading);
         }
 

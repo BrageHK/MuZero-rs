@@ -25,6 +25,7 @@ pub struct TrainingTui {
     started: Instant,
     last_print: Instant,
     last_sps: f64,
+    last_tps: f64,
     last_loss: f32,
     total_steps: usize,
     avg_window: usize,
@@ -32,25 +33,24 @@ pub struct TrainingTui {
     best_id: Option<MetricId>,
     avg_id: Option<MetricId>,
     elo_id: Option<MetricId>,
-    eval_score_id: Option<MetricId>,
-    win_id: Option<MetricId>,
-    draw_id: Option<MetricId>,
-    loss_pct_id: Option<MetricId>,
     opponent_id: Option<MetricId>,
-    sps_id: Option<MetricId>,
     tau_id: Option<MetricId>,
     loss_id: Option<MetricId>,
     consistency_id: Option<MetricId>,
-    len_id: Option<MetricId>,
-    buf_id: Option<MetricId>,
     best_reward: f32,
     recent_rewards: VecDeque<f32>,
     recent_lengths: VecDeque<usize>,
     rate_samples: VecDeque<(Instant, usize)>,
+    train_rate_samples: VecDeque<(Instant, usize)>,
     games_finished: usize,
     env_steps: usize,
     train_steps: usize,
     buffer_states: usize,
+    avg_game_length: f64,
+    win_pct: f64,
+    draw_pct: f64,
+    loss_pct: f64,
+    board_game: bool,
 }
 
 impl TrainingTui {
@@ -93,17 +93,10 @@ impl TrainingTui {
                 numeric("Avg Game Reward", true),
             ),
         };
-        let (elo_id, eval_score_id, win_id, draw_id, loss_pct_id) = match board_game {
-            true => (
-                numeric("Elo", true),
-                numeric("Eval Score", true),
-                numeric("Win %", true),
-                numeric("Draw %", true),
-                numeric("Loss %", false),
-            ),
-            false => (None, None, None, None, None),
+        let elo_id = match board_game {
+            true => numeric("Elo", true),
+            false => None,
         };
-        let sps_id = numeric("Env Steps / sec", true);
         // Gumbel picks the root action deterministically, so tau is meaningless there.
         let tau_id = match mz_conf.search_algorithm {
             SearchAlgorithm::Puct => numeric("Tau", true),
@@ -111,8 +104,6 @@ impl TrainingTui {
         };
         let loss_id = numeric("Loss", false);
         let consistency_id = numeric("Consistency Loss", false);
-        let len_id = numeric("Avg Game Length", true);
-        let buf_id = numeric("Buffer States", true);
         let opponent_id = match board_game {
             true => register("Eval Opponent", MetricAttributes::None),
             false => None,
@@ -124,6 +115,7 @@ impl TrainingTui {
             started: Instant::now(),
             last_print: Instant::now(),
             last_sps: 0.0,
+            last_tps: 0.0,
             last_loss: f32::NAN,
             total_steps: mz_conf.training_steps,
             avg_window: mz_conf.avg_window,
@@ -131,25 +123,24 @@ impl TrainingTui {
             best_id,
             avg_id,
             elo_id,
-            eval_score_id,
-            win_id,
-            draw_id,
-            loss_pct_id,
             opponent_id,
-            sps_id,
             tau_id,
             loss_id,
             consistency_id,
-            len_id,
-            buf_id,
             best_reward: f32::NEG_INFINITY,
             recent_rewards: VecDeque::with_capacity(mz_conf.avg_window),
             recent_lengths: VecDeque::with_capacity(mz_conf.avg_window),
             rate_samples: VecDeque::new(),
+            train_rate_samples: VecDeque::new(),
             games_finished: 0,
             env_steps: 0,
             train_steps: 0,
             buffer_states: 0,
+            avg_game_length: 0.0,
+            win_pct: 0.0,
+            draw_pct: 0.0,
+            loss_pct: 0.0,
+            board_game,
         }
     }
 
@@ -195,32 +186,15 @@ impl TrainingTui {
         let best_reward = self.best_reward as f64;
         Self::set(&mut self.renderer, &self.best_id, best_reward);
         Self::set(&mut self.renderer, &self.avg_id, avg);
-        Self::set(&mut self.renderer, &self.len_id, avg_len);
+        self.avg_game_length = avg_len;
     }
 
     pub fn set_eval(&mut self, reading: &EvalReading) {
         let games = reading.result.games().max(1) as f64;
         Self::set(&mut self.renderer, &self.elo_id, reading.elo as f64);
-        Self::set(
-            &mut self.renderer,
-            &self.eval_score_id,
-            reading.result.score() as f64,
-        );
-        Self::set(
-            &mut self.renderer,
-            &self.win_id,
-            100.0 * reading.result.wins as f64 / games,
-        );
-        Self::set(
-            &mut self.renderer,
-            &self.draw_id,
-            100.0 * reading.result.draws as f64 / games,
-        );
-        Self::set(
-            &mut self.renderer,
-            &self.loss_pct_id,
-            100.0 * reading.result.losses as f64 / games,
-        );
+        self.win_pct = 100.0 * reading.result.wins as f64 / games;
+        self.draw_pct = 100.0 * reading.result.draws as f64 / games;
+        self.loss_pct = 100.0 * reading.result.losses as f64 / games;
         Self::set_text(&mut self.renderer, &self.opponent_id, &reading.opponent);
     }
 
@@ -239,7 +213,22 @@ impl TrainingTui {
 
     pub fn set_buffer_states(&mut self, n: usize) {
         self.buffer_states = n;
-        Self::set(&mut self.renderer, &self.buf_id, n as f64);
+    }
+
+    pub fn games_finished(&self) -> usize {
+        self.games_finished
+    }
+
+    pub fn env_steps(&self) -> usize {
+        self.env_steps
+    }
+
+    /// Restores counters from a checkpoint so a resumed run's display picks up
+    /// where the previous one left off instead of restarting from zero.
+    pub fn seed_counts(&mut self, env_steps: usize, games_finished: usize, train_steps: usize) {
+        self.env_steps = env_steps;
+        self.games_finished = games_finished;
+        self.train_steps = train_steps;
     }
 
     pub fn add_env_steps(&mut self, n: usize, backprop_active: bool) {
@@ -263,12 +252,25 @@ impl TrainingTui {
         if elapsed > 0.0 {
             let rate = (self.env_steps - first_steps) as f64 / elapsed;
             self.last_sps = rate;
-            Self::set(&mut self.renderer, &self.sps_id, rate);
         }
     }
 
     pub fn add_train_steps(&mut self, n: usize) {
         self.train_steps += n;
+
+        let now = Instant::now();
+        self.train_rate_samples.push_back((now, self.train_steps));
+        while self.train_rate_samples.len() > 2
+            && now.duration_since(self.train_rate_samples[0].0) > self.rate_window
+        {
+            self.train_rate_samples.pop_front();
+        }
+
+        let (first_t, first_steps) = self.train_rate_samples[0];
+        let elapsed = now.duration_since(first_t).as_secs_f64();
+        if elapsed > 0.0 {
+            self.last_tps = (self.train_steps - first_steps) as f64 / elapsed;
+        }
     }
 
     pub fn render(&mut self, step: usize) {
@@ -277,24 +279,34 @@ impl TrainingTui {
             global_progress: Progress::new(step, self.total_steps),
             iteration: Some(step),
         };
-        let counters = vec![
+        let mut counters = vec![
             ProgressType::Value {
-                tag: "Env steps".to_string(),
-                value: self.env_steps,
-            },
-            ProgressType::Value {
-                tag: "Train steps".to_string(),
-                value: self.train_steps,
-            },
-            ProgressType::Value {
-                tag: "Games".to_string(),
+                tag: format!(
+                    "Games (avg len {}, buffer {})",
+                    self.avg_game_length.round() as usize,
+                    self.buffer_states
+                ),
                 value: self.games_finished,
             },
             ProgressType::Value {
-                tag: "Buffer states".to_string(),
-                value: self.buffer_states,
+                tag: format!("Env steps/s (train {})", self.last_tps.round() as usize),
+                value: self.last_sps.round() as usize,
+            },
+            ProgressType::Value {
+                tag: format!("Train steps (env {})", self.env_steps),
+                value: self.train_steps,
             },
         ];
+        if self.board_game {
+            counters.push(ProgressType::Value {
+                tag: format!(
+                    "Win % (draw {}/loss {})",
+                    self.draw_pct.round() as usize,
+                    self.loss_pct.round() as usize
+                ),
+                value: self.win_pct.round() as usize,
+            });
+        }
 
         match self.renderer.as_mut() {
             Some(renderer) => renderer.render_train(progress, counters),
@@ -302,13 +314,14 @@ impl TrainingTui {
                 if self.last_print.elapsed() >= Duration::from_secs(1) {
                     self.last_print = Instant::now();
                     println!(
-                        "t={:.1} step={step} env_steps={} train_steps={} games={} buffer={} sps={:.0} loss={:.4}",
+                        "t={:.1} step={step} env_steps={} train_steps={} games={} buffer={} sps={:.0} tps={:.0} loss={:.4}",
                         self.started.elapsed().as_secs_f64(),
                         self.env_steps,
                         self.train_steps,
                         self.games_finished,
                         self.buffer_states,
                         self.last_sps,
+                        self.last_tps,
                         self.last_loss,
                     );
                 }

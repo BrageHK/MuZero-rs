@@ -48,12 +48,14 @@ where
                 AdamConfig::new()
                     .with_grad_clipping(clip)
                     .with_weight_decay(weight_decay)
+                    .with_epsilon(mz_conf.eps)
                     .init(),
             ),
             OptimChoice::AdamW => Self::AdamW(
                 AdamWConfig::new()
                     .with_grad_clipping(clip)
                     .with_weight_decay(mz_conf.weight_decay)
+                    .with_epsilon(mz_conf.eps)
                     .init(),
             ),
             OptimChoice::Sgd => Self::Sgd(

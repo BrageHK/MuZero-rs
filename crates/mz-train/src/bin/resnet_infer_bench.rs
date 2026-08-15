@@ -23,6 +23,7 @@ use mz_rs::utils::{BackendChoice, select_device};
 const WARMUP_ITERS: usize = 10;
 const TIMED_ITERS: usize = 100;
 const BATCH_SIZES: &[usize] = &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+const MAX_RUN_SECS: f64 = 10.0;
 
 const BACKENDS: &[BackendChoice] = &[
     //BackendChoice::LibTorchGpu,
@@ -93,6 +94,11 @@ fn bench_backend<B: burn::prelude::Backend>(
             batch,
             us_per_sample,
         });
+
+        if elapsed.as_secs_f64() > MAX_RUN_SECS {
+            println!("(batch {batch} took {:.1}s, skipping larger batches for {backend:?})", elapsed.as_secs_f64());
+            break;
+        }
     }
 }
 
