@@ -24,9 +24,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: jetli/wasm-pack-action@v0.4.0
       - name: Build wasm package
-        run: |
-          wasm-pack build crates/mz-web --target web --out-dir web/pkg \
-              --no-default-features --features flex
+        run: wasm-pack build crates/mz-web --target web --out-dir web/pkg
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

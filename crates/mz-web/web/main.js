@@ -17,6 +17,22 @@ const FILES = "abcdefgh";
 let game = null;
 let humanIsBlack = true;
 let busy = false;
+let prevBoard = null;
+
+const FLIP_STEP_MS = 32;
+
+// Flips ripple outward from the placed stone along the flipped line, so
+// stagger each flip by its Chebyshev distance from the move that caused it.
+function chebyshev(square, from) {
+  if (from == null || from < 0 || from > 63) {
+    return 0;
+  }
+  const ax = square % 8;
+  const ay = (square / 8) | 0;
+  const bx = from % 8;
+  const by = (from / 8) | 0;
+  return Math.max(Math.abs(ax - bx), Math.abs(ay - by));
+}
 
 function humanTurn() {
   return game.black_to_move() === humanIsBlack;
@@ -43,19 +59,34 @@ function render() {
 
   cells.forEach((cell, square) => {
     const owner = board[square];
-    cell.className = "cell";
-    if (owner !== 0) {
-      cell.innerHTML = `<span class="stone ${owner === 1 ? "black" : "white"}"></span>`;
-    } else {
-      cell.innerHTML = "";
-      if (clickable && legal[square]) {
-        cell.classList.add("legal");
+    const prevOwner = prevBoard ? prevBoard[square] : undefined;
+
+    cell.classList.toggle("legal", owner === 0 && clickable && !!legal[square]);
+    cell.classList.toggle("last", square === last);
+
+    if (owner === 0) {
+      if (cell.firstElementChild) {
+        cell.innerHTML = "";
       }
+      return;
     }
-    if (square === last) {
-      cell.classList.add("last");
+    if (prevBoard && prevOwner === owner) {
+      // Unchanged stone: leave its DOM node alone so it doesn't replay its
+      // placement animation on every render.
+      return;
+    }
+
+    const flipped = !!prevBoard && prevOwner !== 0 && prevOwner !== owner && square !== last;
+    let stoneClass = `stone ${owner === 1 ? "black" : "white"}`;
+    if (flipped) {
+      stoneClass += owner === 1 ? " flip-to-black" : " flip-to-white";
+    }
+    cell.innerHTML = `<span class="${stoneClass}"></span>`;
+    if (flipped) {
+      cell.firstElementChild.style.animationDelay = `${chebyshev(square, last) * FLIP_STEP_MS}ms`;
     }
   });
+  prevBoard = Array.from(board);
 
   const [black, white] = game.counts();
   countBlackEl.textContent = black;
@@ -147,6 +178,7 @@ undoEl.addEventListener("click", async () => {
     return;
   }
   game.undo();
+  prevBoard = null;
   evalEl.textContent = "";
   render();
   await settle();
@@ -158,6 +190,7 @@ newGameEl.addEventListener("click", async () => {
   }
   game.reset();
   humanIsBlack = colourEl.value === "black";
+  prevBoard = null;
   evalEl.textContent = "";
   render();
   await settle();
@@ -171,42 +204,12 @@ simsEl.addEventListener("change", () => {
   }
 });
 
-// WebGPU existence isn't enough — requestAdapter() can still resolve null (or
-// throw) on a blocklisted or broken GPU, so probe it for real.
-async function detectWebGpu() {
-  if (!("gpu" in navigator)) {
-    return false;
-  }
-  try {
-    return (await navigator.gpu.requestAdapter()) !== null;
-  } catch {
-    return false;
-  }
-}
-
-// Two separate wasm builds ship the WebGPU and CPU-SIMD (flex) backends —
-// burn's backend type is picked at compile time, so there's no way to switch
-// between them inside a single binary. Pick whichever one actually works.
-async function loadBackend() {
-  if (await detectWebGpu()) {
-    try {
-      const mod = await import("./pkg-webgpu/mz_web.js");
-      await mod.default();
-      return { mod, label: "WebGPU · Gumbel MuZero" };
-    } catch (error) {
-      console.warn("WebGPU backend failed to load, falling back to CPU SIMD", error);
-    }
-  }
-  const mod = await import("./pkg-flex/mz_web.js");
-  await mod.default();
-  return { mod, label: "Gumbel MuZero — SIMD CPU inference via WASM" };
-}
-
 async function main() {
-  const { mod, label } = await loadBackend();
+  const mod = await import("./pkg/mz_web.js");
+  await mod.default();
   game = await mod.create(Number(simsEl.value));
   simsEl.value = String(game.simulations());
-  backendEl.textContent = label;
+  backendEl.textContent = "Gumbel MuZero — SIMD CPU inference via WASM";
   render();
   await settle();
 }

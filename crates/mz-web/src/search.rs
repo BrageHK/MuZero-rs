@@ -1,6 +1,6 @@
-//! Single-tree Gumbel MuZero search, async so it works on WebGPU (which has no
-//! synchronous readback in the browser). A port of the Gumbel path of
-//! `mz-train`'s `batched_search` with the batch dimension and PUCT dropped.
+//! Single-tree Gumbel MuZero search, exposed async to match wasm-bindgen's
+//! calling convention. A port of the Gumbel path of `mz-train`'s
+//! `batched_search` with the batch dimension and PUCT dropped.
 
 use burn::{
     Tensor,

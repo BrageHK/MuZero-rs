@@ -4,7 +4,7 @@
 //!
 //! cargo test -p mz-web --no-default-features --features ndarray
 
-#![cfg(all(feature = "ndarray", not(feature = "webgpu")))]
+#![cfg(feature = "ndarray")]
 
 use burn::backend::NdArray;
 use burn::backend::ndarray::NdArrayDevice;

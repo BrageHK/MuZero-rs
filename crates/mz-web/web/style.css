@@ -229,6 +229,67 @@ header h1 {
   }
 }
 
+.stone.flip-to-black,
+.stone.flip-to-white {
+  animation-duration: 0.26s;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: both;
+}
+
+.stone.flip-to-black {
+  animation-name: flip-to-black;
+}
+
+.stone.flip-to-white {
+  animation-name: flip-to-white;
+}
+
+@keyframes flip-to-black {
+  0% {
+    transform: scaleX(1);
+    background: var(--white-disc);
+    box-shadow: none;
+  }
+  50% {
+    transform: scaleX(0.05);
+    background: var(--white-disc);
+    box-shadow: none;
+  }
+  51% {
+    transform: scaleX(0.05);
+    background: var(--black-disc);
+    box-shadow: inset 0 0 0 1px var(--black-ring);
+  }
+  100% {
+    transform: scaleX(1);
+    background: var(--black-disc);
+    box-shadow: inset 0 0 0 1px var(--black-ring);
+  }
+}
+
+@keyframes flip-to-white {
+  0% {
+    transform: scaleX(1);
+    background: var(--black-disc);
+    box-shadow: inset 0 0 0 1px var(--black-ring);
+  }
+  50% {
+    transform: scaleX(0.05);
+    background: var(--black-disc);
+    box-shadow: inset 0 0 0 1px var(--black-ring);
+  }
+  51% {
+    transform: scaleX(0.05);
+    background: var(--white-disc);
+    box-shadow: none;
+  }
+  100% {
+    transform: scaleX(1);
+    background: var(--white-disc);
+    box-shadow: none;
+  }
+}
+
 .controls {
   display: flex;
   flex-wrap: wrap;

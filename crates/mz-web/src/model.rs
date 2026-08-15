@@ -19,27 +19,14 @@ include!("../assets/net_config.rs");
 
 static WEIGHTS: &[u8] = include_bytes!("../assets/othello.bin");
 
-#[cfg(feature = "webgpu")]
-pub type Be = burn::backend::WebGpu;
-#[cfg(all(feature = "flex", not(feature = "webgpu")))]
+#[cfg(feature = "flex")]
 pub type Be = burn::backend::Flex;
-#[cfg(all(feature = "ndarray", not(feature = "webgpu"), not(feature = "flex")))]
+#[cfg(all(feature = "ndarray", not(feature = "flex")))]
 pub type Be = burn::backend::NdArray;
 
 pub type Device = <Be as BackendTypes>::Device;
 
-/// WebGPU cannot be set up synchronously in the browser, so the adapter request
-/// has to be awaited before the first tensor op.
-pub async fn init_backend(device: &Device) {
-    #[cfg(feature = "webgpu")]
-    burn::backend::wgpu::init_setup_async::<burn::backend::wgpu::graphics::WebGpu>(
-        device,
-        Default::default(),
-    )
-    .await;
-    #[cfg(not(feature = "webgpu"))]
-    let _ = device;
-}
+pub async fn init_backend(_device: &Device) {}
 
 pub fn load(device: &Device) -> Net<Be> {
     let record = BinBytesRecorder::<HalfPrecisionSettings, &'static [u8]>::default()

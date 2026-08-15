@@ -109,7 +109,7 @@ onmessage = (event) => {
 async function boot() {
   await init();
   game = await create(128);
-  postMessage({ type: "boot", hasWebGpu: "gpu" in self.navigator });
+  postMessage({ type: "boot" });
 }
 
 boot();

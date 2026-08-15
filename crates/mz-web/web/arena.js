@@ -19,7 +19,7 @@ const depthEl = { black: document.getElementById("depth-black"), white: document
 
 const PASS = 64;
 const FILES = "abcdefgh";
-const DEPTH_LABELS = { 1: "Easy", 3: "Medium", 5: "Hard", 10: "Very hard", 15: "Extreme" };
+const DEPTH_LABELS = { 1: "Easy", 3: "Medium", 5: "Hard", 10: "Very hard"};
 
 // Standard Othello opening: black d5/e4 (squares 28, 35), white d4/e5 (27, 36).
 // Painted immediately on load/new-fight so the board never waits on the
@@ -41,8 +41,24 @@ let genId = 0;
 let running = false;
 let busy = false;
 let gameOver = false;
+let prevCells = null;
 const config = { black: null, white: null };
 const board = { cells: INITIAL_BOARD, counts: [2, 2], lastMove: 255, blackToMove: true };
+
+const FLIP_STEP_MS = 32;
+
+// Flips ripple outward from the placed stone along the flipped line, so
+// stagger each flip by its Chebyshev distance from the move that caused it.
+function chebyshev(square, from) {
+  if (from == null || from < 0 || from > 63) {
+    return 0;
+  }
+  const ax = square % 8;
+  const ay = (square / 8) | 0;
+  const bx = from % 8;
+  const by = (from / 8) | 0;
+  return Math.max(Math.abs(ax - bx), Math.abs(ay - by));
+}
 
 const cells = Array.from({ length: 64 }, (_, square) => {
   const cell = document.createElement("button");
@@ -92,16 +108,33 @@ function updateToggle() {
 function render() {
   cells.forEach((cell, square) => {
     const owner = board.cells[square];
-    cell.className = "cell";
-    if (owner !== 0) {
-      cell.innerHTML = `<span class="stone ${owner === 1 ? "black" : "white"}"></span>`;
-    } else {
-      cell.innerHTML = "";
+    const prevOwner = prevCells ? prevCells[square] : undefined;
+
+    cell.classList.toggle("last", square === board.lastMove);
+
+    if (owner === 0) {
+      if (cell.firstElementChild) {
+        cell.innerHTML = "";
+      }
+      return;
     }
-    if (square === board.lastMove) {
-      cell.classList.add("last");
+    if (prevCells && prevOwner === owner) {
+      // Unchanged stone: leave its DOM node alone so it doesn't replay its
+      // placement animation on every render.
+      return;
+    }
+
+    const flipped = !!prevCells && prevOwner !== 0 && prevOwner !== owner && square !== board.lastMove;
+    let stoneClass = `stone ${owner === 1 ? "black" : "white"}`;
+    if (flipped) {
+      stoneClass += owner === 1 ? " flip-to-black" : " flip-to-white";
+    }
+    cell.innerHTML = `<span class="${stoneClass}"></span>`;
+    if (flipped) {
+      cell.firstElementChild.style.animationDelay = `${chebyshev(square, board.lastMove) * FLIP_STEP_MS}ms`;
     }
   });
+  prevCells = Array.from(board.cells);
 
   const [black, white] = board.counts;
   countBlackEl.textContent = black;
@@ -135,9 +168,7 @@ const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "modu
 worker.onmessage = (event) => {
   const msg = event.data;
   if (msg.type === "boot") {
-    backendEl.textContent = msg.hasWebGpu
-      ? "WebGPU · Gumbel MuZero"
-      : "Gumbel MuZero — SIMD CPU inference via WASM";
+    backendEl.textContent = "Gumbel MuZero — SIMD CPU inference via WASM";
     syncFighterUi("black");
     syncFighterUi("white");
     newFight();
@@ -187,6 +218,7 @@ function newFight() {
   board.counts = [2, 2];
   board.lastMove = 255;
   board.blackToMove = true;
+  prevCells = null;
   evalEl.textContent = "";
   render();
   worker.postMessage({ type: "newFight", genId, black: config.black, white: config.white });

@@ -25,13 +25,7 @@ mz-train = { path = "../mz-train", default-features = false, features = ["ndarra
 fastrand = "2.4.1"
 
 [features]
-# WebGPU in the browser. `burn/wgpu` alone would leave burn-wgpu without a
-# shader compiler, since burn's default features are off here; `webgpu` pulls in
-# the wgsl one. Fusion stays off: burn recommends against it on wasm.
-default = ["webgpu"]
-webgpu = ["burn/webgpu", "mz-core/webgpu"]
-# Pure-Rust SIMD128 CPU backend. Works on any browser and is the faster choice
-# for a batch-of-1 MLP.
+default = ["flex"]
 flex = ["burn/flex", "mz-core/flex"]
 # Native tests only.
 ndarray = ["burn/ndarray", "mz-core/ndarray"]
