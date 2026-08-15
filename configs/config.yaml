@@ -19,27 +19,27 @@ linear:
 
 resnet:
     representation:
-        channels: 64
-        n_blocks: 15
+        channels: 128
+        n_blocks: 10
         gpool: { every: 3, pool_channels: 16 }  # KataGo-style global pooling block every Nth block; every: 0 disables
     dynamic:
-        channels: 64
-        n_blocks: 2
-        fc_hidden_size: 1024
-        gpool: { every: 0, pool_channels: 0 }   # tiny tower: leave off by default
+        channels: 128
+        n_blocks: 5
+        fc_hidden_size: 2048
+        gpool: { every: 0, pool_channels: 16 }   # tiny tower: leave off by default
     prediction:
-        channels: 64
-        n_blocks: 10
-        fc_hidden_size: 1024
+        channels: 128
+        n_blocks: 15
+        fc_hidden_size: 2048
     head_gpool:                                 # global pooling injected directly into the policy/value heads
-        policy_channels: 16                     # 0 disables
-        value_channels: 16                      # 0 disables (falls back to flatten(h*w), resolution-coupled)
+        policy_channels: 64                     # 0 disables
+        value_channels: 64                      # 0 disables (falls back to flatten(h*w), resolution-coupled)
 
 # SimSiam: For ResNet the projector reduces channels and pools to 6x6
 projection:
     proj_hidden: 128
-    proj_out: 32
-    pred_hidden: 64
+    proj_out: 64
+    pred_hidden: 128
 
 # Compute backends. Must be compiled in via cargo features (see crates/mz-train/Cargo.toml).
 # Options: auto, cuda, rocm, metal, vulkan, wgpu, flex, ndarray, libtorch, libtorch-gpu
@@ -54,12 +54,12 @@ unroll_steps: 5
 train_ratio: 2
 
 # Batch sizes
-training_batch_size: 128
-game_batch_size: 128
+training_batch_size: 32
+game_batch_size: 32
 
 # Optimizer
 optimizer: Sgd                      # AdamW, Adam, Sgd
-learning_rate: 0.1
+learning_rate: 0.01
 lr_decay_rate: 0.1
 lr_decay_steps: 400000
 lr_warmup_steps: 100                # Number of training steps to warmup
@@ -99,8 +99,8 @@ gumbel:
 # Elo rating for board games
 eval:
     interval: 1000                  # training steps between evals. 0 disables
-    games: 128
-    num_simulations: null           # null = same as training
+    games: 32
+    num_simulations: 128           # null = same as training
     random_opening_plies: 4         # random plies before the agents take over
     promote_score: 0.80             # score at which the agent moves up one opponent
     demote_score: 0.20              # score at which it drops back down
@@ -121,7 +121,7 @@ training_steps: 10000000
 
 # Reanalyze
 reanalyze_fraction: 0.1            # chance per iteration of refreshing the stalest samples; 0.0 disables
-reanalyze_batch_size: 128          # candidate entries sampled per training step
+reanalyze_batch_size: 32          # candidate entries sampled per training step
 
 # Parallel settings
 rayon_min_chunk_len: 99999

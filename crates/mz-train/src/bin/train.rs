@@ -72,7 +72,7 @@ fn run<E, TrainB, InferB, NT, NI>(
         let opt_path = format!("{ckpt_dir}/optimizer");
         match CompactRecorder::new().load(opt_path.clone().into(), &inner_device) {
             Ok(record) => optimizer = optimizer.load_record(record),
-            Err(e) => eprintln!("No optimizer state loaded from {opt_path}: {e}"),
+            Err(e) => panic!("Failed to load optimizer state from {opt_path}: {e}"),
         }
         buffer.states = load_buffer(&format!("{ckpt_dir}/buffer.mpk"));
         training_step = load_training_step(&format!("{ckpt_dir}/training_step"));
