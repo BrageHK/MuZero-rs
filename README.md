@@ -2,14 +2,40 @@
 
 This project is based on the [MuZero](https://arxiv.org/abs/1911.08265) paper by DeepMind.
 The main problem of Reinforcement Learning (RL) in many cases is skill issue. RL algorithms
-can have astronomical training speedup by not using naive Python implmenetations. That is why
-this program is written in Rust.
+can have astronomical training speedup by not using naive Python implmenetations, and instead
+using compiled code though either Jax or a fast programming language. That is why this program 
+exists and is written in Rust.
 
-# Prerequisites
+# Table of contents
 
-## Packages
 
-This is requried for CartPole and the makefile to work.
+# Algirthm information
+
+This project is based on original [MuZero](https://arxiv.org/abs/1911.08265) paper with
+the MuZero Reanalzye algorithm. A number of improvements of this algorithm have been made 
+by great academics, and this project is a combination of multiple of these improvements.
+The following table shows what improvements are made over the base MuZero algorithm and 
+which paper it is from:
+
+| Improvement    | Paper |
+| :----------- | :---------- |
+| SimSam Consistency Loss  | [EfficientZeroV2](https://arxiv.org/abs/2403.00564) |
+| Global Pooling | [KataGo](https://arxiv.org/abs/1902.10565) |
+| Gumbel MuZero | [Planning with Gumbel](https://openreview.net/forum?id=bERaNdoegnO) |
+
+
+# Getting started
+
+Follow each of these steps carefully and make sure you have
+all the requried packages. If you are not interested in training 
+your own model, you can instead [start the othello website locally]()
+
+## Packages and programming language
+
+* **Rust**: [Programming language](https://rust-lang.org/tools/install/)
+* **sdl2_gfx**: CartPole game environment
+* **make**: Makefile to easily get started
+* **yq**: Used in Makefile
 
 Arch:
 ```bash
@@ -21,17 +47,6 @@ Mac:
 brew install sdl2_gfx pkgconf make yq
 ```
 
-
-## AMD path variables
-
-Only needed if using rocm backend with GFX version 11.0.0
-
-```bash
-export ROCM_PATH=/opt/rocm
-export HIP_PATH=/opt/rocm
-export HSA_OVERRIDE_GFX_VERSION=11.0.0
-```
-
 ## Training
 
 TGo to [config.yaml](configs/config.yaml) and choose a GPU compute backend
@@ -39,6 +54,42 @@ that is compatible with your system. Then use `make` to run.
 
 ```bash
 make train
+```
+
+## Distributed training across multiple PCs
+
+Training can be split across several machines on the same local network,
+communicating over gRPC:
+
+- **Coordinator** (`distributed.role: Coordinator`) — one machine. Owns the
+  replay buffer and the canonical weights, runs the optimizer step, and
+  computes gradients on its own sampled batch alongside any trainer workers
+  (synchronous data-parallel training).
+- **Trainer worker** (`distributed.role: TrainerWorker`) — zero or more
+  machines. Each round it fetches a fresh batch and the current weights from
+  the coordinator, computes a gradient, and sends it back. It never applies an
+  optimizer step itself, so replicas can't drift even across different GPUs.
+- **Self-play worker** (`distributed.role: SelfPlayWorker`) — as many machines
+  as you have. Runs self-play and streams finished games to the coordinator,
+  receiving a fresh network every `inference_update_interval` training steps.
+
+Every node needs the same `network_type`/`environment`/`linear`/`resnet`/
+`projection` section (the network architecture must match exactly), but
+`training_backend`/`inference_backend` can be picked per machine to match its
+hardware. See [configs/distributed](configs/distributed) for example configs —
+copy the one matching each machine's role to that machine's
+`configs/config.yaml`, filling in `distributed.coordinator_addr` with the
+coordinator's LAN address.
+
+```bash
+# on the coordinator machine
+make coordinator
+
+# on each trainer worker
+make trainer-worker
+
+# on each self-play machine
+make selfplay-worker
 ```
 
 # Othello in the browser

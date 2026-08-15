@@ -1,0 +1,113 @@
+network_type: ResNet
+environment: Othello
+
+atari_game: Breakout
+
+linear:
+    representation:
+        latent_space_dims: 32
+        fc_hidden_size: 32
+        n_layers: 3
+    dynamic:
+        latent_space_dims: 32
+        fc_hidden_size: 32
+        n_layers: 3
+    prediction:
+        latent_space_dims: 32
+        fc_hidden_size: 64
+        n_layers: 3
+
+resnet:
+    representation:
+        channels: 196
+        n_blocks: 10
+        gpool: { every: 3, pool_channels: 16 }
+    dynamic:
+        channels: 196
+        n_blocks: 10
+        fc_hidden_size: 512
+        gpool: { every: 3, pool_channels: 16 }
+    prediction:
+        channels: 196
+        n_blocks: 10
+        fc_hidden_size: 512
+    head_gpool:
+        policy_channels: 196
+        value_channels: 196
+
+projection:
+    proj_hidden: 256
+    proj_out: 128
+    pred_hidden: 32
+
+training_backend: ndarray
+inference_backend: wgpu
+
+n_steps: 5
+unroll_steps: 5
+train_ratio: 2
+
+training_batch_size: 16
+game_batch_size: 16
+
+optimizer: AdamW
+learning_rate: 0.003
+lr_decay_rate: 0.1
+lr_decay_steps: 400_000
+lr_warmup_steps: 1_000
+grad_clip: 1.0
+eps: 1e-5
+weight_decay: 1e-4
+momentum: 0.9
+
+value_coef: 0.25
+policy_coef: 1.0
+reward_coef: 1.0
+consistency_coef: 2.0
+
+augmentation: false
+
+search_algorithm: Gumbel
+num_simulations: 8
+discount: 1.0
+
+gumbel:
+    max_num_considered_actions: 4
+    c_visit: 50.0
+    c_scale: 0.1
+
+eval:
+    interval: 1_000
+    games: 16
+    num_simulations: 128
+    random_opening_plies: 4
+    promote_score: 0.90
+    demote_score: 0.10
+    seed: 1592426000
+    ladder: null
+
+support_size: 35
+
+inference_update_interval: 100
+checkpoint_interval: 10_000
+
+avg_window: 100
+rate_window_secs: 10
+
+buffer_size: 1_000_000
+training_steps: 1_000_000
+
+reanalyze_fraction: 0.1
+reanalyze_batch_size: 32
+
+rayon_min_chunk_len: 99_999
+async_training: true
+
+load_from_checkpoint: false
+
+checkpoint_name: "196_channels"
+
+distributed:
+    role: SelfPlayWorker
+    coordinator_addr: "192.168.1.10:50051"
+    worker_id: 1

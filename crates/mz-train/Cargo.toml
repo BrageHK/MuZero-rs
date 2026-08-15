@@ -42,6 +42,11 @@ serde = { workspace = true }
 serde_yaml = "0.9.34"
 strum = "0.28.0"
 rmp-serde = "1.3.1"
+mz-net = { version = "0.1.0", path = "../mz-net" }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+tonic = "0.14.6"
+tokio-stream = { version = "0.1.19", features = ["sync"] }
+futures-core = "0.3.34"
 
 [features]
 default = []

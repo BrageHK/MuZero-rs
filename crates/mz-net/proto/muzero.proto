@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package muzero;
+
+message Empty {}
+
+message Ack {}
+
+// `data` is an rmp_serde-encoded `Vec<mz_rs::replay_buffer::BufferData>`
+// (one finished self-play game).
+message GamePayload {
+    bytes data = 1;
+    float total_reward = 2;
+}
+
+// `weights` is a `mz_rs::networks::nets_to_bytes` blob.
+message WeightUpdate {
+    bytes weights = 1;
+    uint64 training_step = 2;
+}
+
+message BatchRequest {
+    uint32 worker_id = 1;
+}
+
+// `batch` is an rmp_serde-encoded `Vec<Vec<mz_rs::replay_buffer::BufferData>>`,
+// independently sampled per requesting worker. `weights` are the canonical
+// parameters as of `step`; every replica computes its gradient against these
+// same weights before any optimizer step is applied.
+message BatchResponse {
+    bytes batch = 1;
+    bytes weights = 2;
+    uint64 step = 3;
+}
+
+message GradientSubmission {
+    uint32 worker_id = 1;
+    uint64 step = 2;
+    repeated float grad = 3;
+}
+
+// Canonical weights after the coordinator averaged this round's gradients
+// and applied the optimizer step.
+message SyncResult {
+    bytes weights = 1;
+    uint64 step = 2;
+}
+
+// Implemented by the coordinator (main training node); called by self-play nodes.
+service SelfPlayIngest {
+    rpc SubmitGame(GamePayload) returns (Ack);
+    rpc WatchWeights(Empty) returns (stream WeightUpdate);
+}
+
+// Implemented by the coordinator (main training node); called by worker trainers
+// doing synchronous data-parallel backprop (DDP) alongside it.
+service TrainerSync {
+    rpc GetBatch(BatchRequest) returns (BatchResponse);
+    rpc SyncGradients(GradientSubmission) returns (SyncResult);
+}

@@ -26,22 +26,23 @@ pub struct TrainMetrics {
     pub consistency: f32,
 }
 
-pub fn train<B: AutodiffBackend, N, O>(
-    mut agent: N,
-    optimizer: &mut O,
+/// Runs the forward/backward pass and returns the resulting gradients without
+/// applying an optimizer step. Split out from [`train`] so distributed trainer
+/// workers can compute a local gradient, send it off for cross-replica
+/// averaging, and let the coordinator own the actual optimizer step.
+pub fn compute_grads<B: AutodiffBackend, N>(
+    agent: &N,
     mz_conf: &MuZeroConfig,
     buffer: &mut ReplayBuffer,
-    mut augmenter: Option<&mut Augmenter>,
+    augmenter: Option<&mut Augmenter>,
     mut board_sym: Option<&mut BoardSymmetry>,
-    lr: f64,
     device: &B::Device,
-) -> (N, Option<TrainMetrics>)
+) -> Option<(TrainMetrics, GradientsParams)>
 where
     N: MuZeroNets<B> + AutodiffModule<B>,
-    O: Optimizer<N, B>,
 {
     if buffer.states.len() <= mz_conf.training_batch_size {
-        return (agent, None);
+        return None;
     }
 
     let mut sequence = buffer.sample_games(mz_conf);
@@ -51,6 +52,25 @@ where
             sym.apply_game(game, choice);
         }
     }
+
+    Some(compute_grads_on_batch(agent, mz_conf, sequence, augmenter, device))
+}
+
+/// Core forward/backward pass over an already-sampled batch. Split out from
+/// [`compute_grads`] so distributed nodes can sample (and release the replay
+/// buffer lock) before running the potentially slow forward/backward pass:
+/// the coordinator for its own local batch, trainer workers for a batch
+/// fetched over gRPC.
+pub fn compute_grads_on_batch<B: AutodiffBackend, N>(
+    agent: &N,
+    mz_conf: &MuZeroConfig,
+    sequence: Vec<Vec<BufferData>>,
+    mut augmenter: Option<&mut Augmenter>,
+    device: &B::Device,
+) -> (TrainMetrics, GradientsParams)
+where
+    N: MuZeroNets<B> + AutodiffModule<B>,
+{
     let support_size = mz_conf.support_size;
     let support_len = mz_conf.support_len();
     let categorical = mz_conf.categorical();
@@ -200,10 +220,44 @@ where
         consistency: consistency_total.into_scalar().to_f32(),
     };
     let grads = loss.backward();
-    let grads = GradientsParams::from_grads(grads, &agent);
-    agent = optimizer.step(lr, agent, grads);
+    let grads = GradientsParams::from_grads(grads, agent);
 
-    (agent, Some(metrics))
+    (metrics, grads)
+}
+
+/// Applies an already-computed (possibly cross-replica-averaged) gradient with
+/// one optimizer step.
+pub fn apply_grads<B: AutodiffBackend, N, O>(
+    agent: N,
+    optimizer: &mut O,
+    lr: f64,
+    grads: GradientsParams,
+) -> N
+where
+    N: MuZeroNets<B> + AutodiffModule<B>,
+    O: Optimizer<N, B>,
+{
+    optimizer.step(lr, agent, grads)
+}
+
+pub fn train<B: AutodiffBackend, N, O>(
+    agent: N,
+    optimizer: &mut O,
+    mz_conf: &MuZeroConfig,
+    buffer: &mut ReplayBuffer,
+    augmenter: Option<&mut Augmenter>,
+    board_sym: Option<&mut BoardSymmetry>,
+    lr: f64,
+    device: &B::Device,
+) -> (N, Option<TrainMetrics>)
+where
+    N: MuZeroNets<B> + AutodiffModule<B>,
+    O: Optimizer<N, B>,
+{
+    match compute_grads(&agent, mz_conf, buffer, augmenter, board_sym, device) {
+        Some((metrics, grads)) => (apply_grads(agent, optimizer, lr, grads), Some(metrics)),
+        None => (agent, None),
+    }
 }
 
 fn masked_mean<B: AutodiffBackend>(values: Tensor<B, 2>, mask: Tensor<B, 2>) -> Tensor<B, 1> {

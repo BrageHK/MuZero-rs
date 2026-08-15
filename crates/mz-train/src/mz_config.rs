@@ -26,6 +26,58 @@ pub enum OptimChoice {
     Sgd,
 }
 
+/// Coordinator: owns the replay buffer + canonical weights, runs the optimizer
+/// step, and acts as the gRPC server for both other roles.
+/// TrainerWorker: computes gradients on its own sampled batch each round
+/// alongside the coordinator (synchronous DDP), never applies an optimizer step
+/// itself.
+/// SelfPlayWorker: runs self-play, streams finished games to the coordinator,
+/// and receives a fresh network every `inference_update_interval` steps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub enum NodeRole {
+    Standalone,
+    Coordinator,
+    TrainerWorker,
+    SelfPlayWorker,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DistributedConfig {
+    pub role: NodeRole,
+    /// Coordinator only: address to bind the gRPC server to, e.g. "0.0.0.0:50051".
+    #[serde(default = "default_listen_addr")]
+    pub listen_addr: String,
+    /// TrainerWorker/SelfPlayWorker only: coordinator address to dial, e.g. "192.168.1.10:50051".
+    #[serde(default)]
+    pub coordinator_addr: String,
+    /// Coordinator only: number of trainer workers (excluding itself) to gather
+    /// gradients from each round before averaging and stepping.
+    #[serde(default)]
+    pub expected_trainer_workers: usize,
+    /// Coordinator only: max time to wait for a straggling trainer worker's
+    /// gradient submission before stepping with whatever arrived.
+    #[serde(default = "default_sync_timeout_ms")]
+    pub sync_timeout_ms: u64,
+    /// TrainerWorker/SelfPlayWorker only: identifies this node in coordinator logs.
+    #[serde(default)]
+    pub worker_id: u32,
+}
+
+fn default_listen_addr() -> String {
+    "0.0.0.0:50051".to_string()
+}
+
+fn default_sync_timeout_ms() -> u64 {
+    30_000
+}
+
+impl DistributedConfig {
+    pub fn is_standalone(&self) -> bool {
+        matches!(self.role, NodeRole::Standalone)
+    }
+}
+
 /// Puct: MuZero PUCT with Dirichlet root noise and visit-count policy targets.
 /// Gumbel: Gumbel MuZero (Danihelka et al. 2022) — Sequential Halving over
 /// Gumbel-perturbed logits at the root, improved-policy targets.
@@ -252,6 +304,9 @@ pub struct MuZeroConfig {
     #[serde(default)]
     pub eval: Option<EvalConfig>,
 
+    #[serde(default)]
+    pub distributed: Option<DistributedConfig>,
+
     pub training_steps: usize,
     pub train_ratio: f32,
     pub buffer_size: usize,
@@ -455,6 +510,20 @@ fn validate(conf: &MuZeroConfig) {
             gumbel.c_visit
         );
     }
+    if let Some(dist) = conf.distributed.as_ref() {
+        match dist.role {
+            NodeRole::TrainerWorker | NodeRole::SelfPlayWorker => assert!(
+                !dist.coordinator_addr.is_empty(),
+                "distributed.role: {:?} requires `distributed.coordinator_addr`",
+                dist.role
+            ),
+            NodeRole::Coordinator => assert!(
+                dist.expected_trainer_workers == 0 || dist.sync_timeout_ms > 0,
+                "distributed.sync_timeout_ms must be > 0 when expecting trainer workers"
+            ),
+            NodeRole::Standalone => {}
+        }
+    }
     if let Some(eval) = conf.eval.as_ref() {
         assert!(
             eval.games >= 2,
@@ -571,6 +640,20 @@ impl MuZeroConfig {
 
     pub fn eval(&self) -> EvalConfig {
         self.eval.clone().unwrap_or_default()
+    }
+
+    /// Absent `distributed:` section means single-process training.
+    pub fn distributed_role(&self) -> NodeRole {
+        self.distributed
+            .as_ref()
+            .map(|d| d.role)
+            .unwrap_or(NodeRole::Standalone)
+    }
+
+    pub fn distributed(&self) -> &DistributedConfig {
+        self.distributed
+            .as_ref()
+            .expect("this node role requires a `distributed:` section in the config")
     }
 
     pub fn support_len(&self) -> usize {

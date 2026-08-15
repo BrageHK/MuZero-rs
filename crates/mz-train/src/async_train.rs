@@ -37,7 +37,7 @@ use crate::utils::{
 const RENDER_INTERVAL: Duration = Duration::from_millis(50);
 const WARMUP_POLL: Duration = Duration::from_millis(100);
 
-enum SelfPlayMsg {
+pub(crate) enum SelfPlayMsg {
     Game {
         data: Vec<BufferData>,
         reward: f32,
@@ -48,9 +48,9 @@ enum SelfPlayMsg {
     Eval(EvalReading),
 }
 
-struct WeightMsg {
-    bytes: Vec<u8>,
-    training_step: usize,
+pub(crate) struct WeightMsg {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) training_step: usize,
 }
 
 pub fn run<E, TrainB, InferB, NT, NI>(
@@ -116,7 +116,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
     tui.close();
 }
 
-fn self_play<E, InferB, N>(
+pub(crate) fn self_play<E, InferB, N>(
     mz_conf: &MuZeroConfig,
     initial_weights: Vec<u8>,
     infer_device: InferB::Device,

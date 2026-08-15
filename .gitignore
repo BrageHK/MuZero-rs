@@ -34,3 +34,10 @@ model/
 model.bak/
 model_*/
 vendor/
+
+
+# Use make config
+config.yaml
+coordinator.yaml
+selfplay_worker.yaml
+trainer_worker.yaml
