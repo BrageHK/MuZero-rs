@@ -7,23 +7,24 @@ this program is written in Rust.
 
 # Prerequisites
 
-## sdl2_gfx
+## Packages
 
-This is requried for CartPole to work.
+This is requried for CartPole and the makefile to work.
 
 Arch:
 ```bash
-sudo pacman -S sdl2_gfx
+sudo pacman -S sdl2_gfx make yq
 ```
 
 Mac:
 ```bash
-brew install sdl2_gfx pkgconf
+brew install sdl2_gfx pkgconf make yq
 ```
+
 
 ## AMD path variables
 
-Only needed if using rocm backend.
+Only needed if using rocm backend with GFX version 11.0.0
 
 ```bash
 export ROCM_PATH=/opt/rocm
@@ -33,48 +34,50 @@ export HSA_OVERRIDE_GFX_VERSION=11.0.0
 
 ## Training
 
-The available backends are listed in [config.yaml](configs/config.yaml).
+TGo to [config.yaml](configs/config.yaml) and choose a GPU compute backend
+that is compatible with your system. Then use `make` to run.
 
 ```bash
-cargo run -r -p mz-train --bin train --features YOUR_BACKEND
+make train
 ```
 
-## Othello in the browser
+# Othello in the browser
 
-`crates/mz-web` compiles the inference half of the project (`crates/mz-core`) to
-wasm and plays Othello against you with a minimal Gumbel MuZero search. The
-trained weights are embedded in the wasm binary, so the site is fully static.
+You can watch bots play Othello against each other, or play against bots yourself
+in the browser with WebAssembly on the Flex backend with CPU SIMD instructions.
+
+## Prerequisites
+
+Install the WASM stuff:
 
 ```bash
-# 1. Export the checkpoint: writes crates/mz-web/assets/{othello.bin,net_config.rs}
-cargo run -r --bin export_web            # optional arg: checkpoint path without extension
-
-# 2. Build the wasm package
 rustup target add wasm32-unknown-unknown
 cargo install wasm-pack
-wasm-pack build crates/mz-web --target web --out-dir web/pkg
-
-# 3. Serve it (WebGPU needs localhost or https)
-python3 -m http.server -d crates/mz-web/web 8080
 ```
 
-The default build runs on WebGPU. For browsers without it, or for a much smaller
-binary (1.5 MB instead of 8.5 MB) and faster batch-of-1 inference, build the
-pure-Rust SIMD CPU backend instead:
+## Export trained model checkpoint to WASM binary
+
+If you have trained a Othello MuZero agent, you can used it with WASM
+by exporting it with this command:
 
 ```bash
-wasm-pack build crates/mz-web --target web --out-dir web/pkg \
-    --no-default-features --features flex
+# optional arg: checkpoint path without extension
+cargo run --bin export_web            
+
+# 2. Build the wasm package
+make web-build
+
+# 3. Serve it
+make web-serve
 ```
 
-The wasm search is pinned to the training search by a parity test:
+# Results
 
-```bash
-cargo test -p mz-web --no-default-features --features ndarray
-```
+MuZero can play many different games. Here are som examples of how the agent
+learns to play.
 
-# Result
+## Cartpole
 
-After running the parallel training for a few minutes on a M2 Pro mac, the agent learns to play CartPole perfectly.
+After running training for a few minutes on a M2 Pro mac, the agent learns to play CartPole perfectly.
 
 ![Cartpole](media/cartpole.gif)
