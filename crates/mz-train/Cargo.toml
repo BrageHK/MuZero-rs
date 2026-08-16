@@ -61,6 +61,11 @@ tch = ["burn/tch", "dep:burn-dispatch", "burn-dispatch/tch"]
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }
 
+[[bin]]
+name = "export_web"
+path = "src/bin/export_web.rs"
+required-features = ["ndarray"]
+
 [[bench]]
 name = "search_speed"
 path = "src/benches/search_speed.rs"
