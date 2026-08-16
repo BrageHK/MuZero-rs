@@ -8,7 +8,7 @@
 use burn::module::AutodiffModule;
 use burn::tensor::backend::AutodiffBackend;
 
-use mz_net::{BatchRequest, GradientSubmission, TrainerSyncClient};
+use mz_net::{BatchRequest, GradientSubmission, MAX_GRPC_MESSAGE_SIZE, TrainerSyncClient};
 
 use crate::distributed::grad_sync::flatten_grads;
 use crate::mz_config::MuZeroConfig;
@@ -31,7 +31,9 @@ where
 
     let mut client = TrainerSyncClient::connect(addr)
         .await
-        .expect("failed to connect to coordinator");
+        .expect("failed to connect to coordinator")
+        .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
+        .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE);
 
     let net_conf = mz_conf.net_config();
     let retry_backoff = std::time::Duration::from_millis(500);

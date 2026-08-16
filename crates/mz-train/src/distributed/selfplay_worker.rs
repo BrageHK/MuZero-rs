@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use burn::tensor::backend::Backend;
 use burn::train::Interrupter;
 
-use mz_net::{Empty, GamePayload, SelfPlayIngestClient};
+use mz_net::{Empty, GamePayload, MAX_GRPC_MESSAGE_SIZE, SelfPlayIngestClient};
 
 use crate::async_train::{SelfPlayMsg, WeightMsg, self_play};
 use crate::env::Environment;
@@ -39,7 +39,9 @@ where
 
     let mut client = SelfPlayIngestClient::connect(addr)
         .await
-        .expect("failed to connect to coordinator");
+        .expect("failed to connect to coordinator")
+        .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
+        .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE);
 
     let mut weight_stream = client
         .watch_weights(Empty {})

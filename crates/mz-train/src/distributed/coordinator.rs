@@ -21,8 +21,9 @@ use tokio_stream::wrappers::WatchStream;
 use tonic::{Request, Response, Status, transport::Server};
 
 use mz_net::{
-    Ack, BatchRequest, BatchResponse, Empty, GamePayload, GradientSubmission, SelfPlayIngest,
-    SelfPlayIngestServer, SyncResult, TrainerSync, TrainerSyncServer, WeightUpdate,
+    Ack, BatchRequest, BatchResponse, Empty, GamePayload, GradientSubmission,
+    MAX_GRPC_MESSAGE_SIZE, SelfPlayIngest, SelfPlayIngestServer, SyncResult, TrainerSync,
+    TrainerSyncServer, WeightUpdate,
 };
 
 use crate::distributed::grad_sync::{average_into, flatten_grads, unflatten_grads};
@@ -190,11 +191,15 @@ pub async fn run<TrainB, NT>(
     let self_play_svc = SelfPlayIngestServer::new(SelfPlayIngestSvc {
         shared: shared.clone(),
         mz_conf: mz_conf.clone(),
-    });
+    })
+    .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
+    .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE);
     let trainer_svc = TrainerSyncServer::new(TrainerSyncSvc {
         shared: shared.clone(),
         mz_conf: mz_conf.clone(),
-    });
+    })
+    .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
+    .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE);
 
     let addr = listen_addr
         .parse()
