@@ -9,7 +9,7 @@ use mz_rs::with_net;
 async fn main() {
     type TrainB = Dispatch;
 
-    let mz_conf = MuZeroConfig::default();
+    let mz_conf = MuZeroConfig::new::<TrainB>("configs/distributed/trainer_worker.yaml");
     assert!(
         matches!(mz_conf.distributed_role(), NodeRole::TrainerWorker),
         "bin/trainer_worker requires `distributed: {{ role: TrainerWorker, ... }}` in the config"

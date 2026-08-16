@@ -44,7 +44,7 @@ sudo pacman -S sdl2_gfx make yq
 
 Mac:
 ```bash
-brew install sdl2_gfx pkgconf make yq
+brew install sdl2_gfx pkgconf make yq protobuf
 ```
 
 ## Training
@@ -76,10 +76,11 @@ communicating over gRPC:
 Every node needs the same `network_type`/`environment`/`linear`/`resnet`/
 `projection` section (the network architecture must match exactly), but
 `training_backend`/`inference_backend` can be picked per machine to match its
-hardware. See [configs/distributed](configs/distributed) for example configs —
-copy the one matching each machine's role to that machine's
-`configs/config.yaml`, filling in `distributed.coordinator_addr` with the
-coordinator's LAN address.
+hardware. Each role reads its own config file under
+[configs/distributed](configs/distributed) — `coordinator.yaml`,
+`trainer_worker.yaml`, `selfplay_worker.yaml` — so fill in the one matching
+each machine's role (via `make config`, or by copying its `.example` file),
+setting `distributed.coordinator_addr` to the coordinator's LAN address.
 
 ```bash
 # on the coordinator machine

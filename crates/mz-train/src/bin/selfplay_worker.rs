@@ -9,7 +9,7 @@ use mz_rs::{with_env, with_net};
 async fn main() {
     type InferB = Dispatch;
 
-    let mz_conf = MuZeroConfig::default();
+    let mz_conf = MuZeroConfig::new::<InferB>("configs/distributed/selfplay_worker.yaml");
     assert!(
         matches!(mz_conf.distributed_role(), NodeRole::SelfPlayWorker),
         "bin/selfplay_worker requires `distributed: {{ role: SelfPlayWorker, ... }}` in the config"

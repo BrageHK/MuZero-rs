@@ -16,7 +16,7 @@ use mz_rs::with_net;
 async fn main() {
     type TrainB = Dispatch;
 
-    let mz_conf = MuZeroConfig::default();
+    let mz_conf = MuZeroConfig::new::<TrainB>("configs/distributed/coordinator.yaml");
     assert!(
         matches!(mz_conf.distributed_role(), NodeRole::Coordinator),
         "bin/coordinator requires `distributed: {{ role: Coordinator, ... }}` in the config"

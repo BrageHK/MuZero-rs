@@ -21,24 +21,31 @@ train: ## Run training with backends from config.yaml
 	INFERENCE_BACKEND=$$(yq -r '.inference_backend' configs/config.yaml); \
 	cargo run -r -p mz-train --bin train --features="$$TRAIN_BACKEND,$$INFERENCE_BACKEND"
 
-coordinator: ## Run the distributed coordinator with backends from config.yaml
-	TRAIN_BACKEND=$$(yq -r '.training_backend' configs/config.yaml); \
-	INFERENCE_BACKEND=$$(yq -r '.inference_backend' configs/config.yaml); \
+coordinator: ## Run the distributed coordinator with backends from configs/distributed/coordinator.yaml
+	TRAIN_BACKEND=$$(yq -r '.training_backend' configs/distributed/coordinator.yaml); \
+	INFERENCE_BACKEND=$$(yq -r '.inference_backend' configs/distributed/coordinator.yaml); \
 	cargo run -r -p mz-train --bin coordinator --features="$$TRAIN_BACKEND,$$INFERENCE_BACKEND"
 
-trainer-worker: ## Run a distributed trainer worker with backends from config.yaml
-	TRAIN_BACKEND=$$(yq -r '.training_backend' configs/config.yaml); \
-	INFERENCE_BACKEND=$$(yq -r '.inference_backend' configs/config.yaml); \
+trainer-worker: ## Run a distributed trainer worker with backends from configs/distributed/trainer_worker.yaml
+	TRAIN_BACKEND=$$(yq -r '.training_backend' configs/distributed/trainer_worker.yaml); \
+	INFERENCE_BACKEND=$$(yq -r '.inference_backend' configs/distributed/trainer_worker.yaml); \
 	cargo run -r -p mz-train --bin trainer_worker --features="$$TRAIN_BACKEND,$$INFERENCE_BACKEND"
 
-selfplay-worker: ## Run a distributed self-play worker with backends from config.yaml
-	TRAIN_BACKEND=$$(yq -r '.training_backend' configs/config.yaml); \
-	INFERENCE_BACKEND=$$(yq -r '.inference_backend' configs/config.yaml); \
+selfplay-worker: ## Run a distributed self-play worker with backends from configs/distributed/selfplay_worker.yaml
+	TRAIN_BACKEND=$$(yq -r '.training_backend' configs/distributed/selfplay_worker.yaml); \
+	INFERENCE_BACKEND=$$(yq -r '.inference_backend' configs/distributed/selfplay_worker.yaml); \
 	cargo run -r -p mz-train --bin selfplay_worker --features="$$TRAIN_BACKEND,$$INFERENCE_BACKEND"
 
+UNAME_S := $(shell uname -s)
+
 benchmark: ## Sweep inference batch sizes across all backends
+ifeq ($(UNAME_S),Darwin)
+	cargo run -r -p mz-train --bin resnet_infer_bench --features "metal,tch"
+endif
+ifeq ($(UNAME_S),Linux)
 	cargo run -r -p mz-train --bin resnet_infer_bench --features "tch,vulkan,rocm"
 	cargo run -r -p mz-train --bin resnet_infer_bench --features "wgpu"
+endif
 
 web-build: ## Compile mz-web to wasm into web/pkg
 	wasm-pack build crates/mz-web --target web --out-dir web/pkg
