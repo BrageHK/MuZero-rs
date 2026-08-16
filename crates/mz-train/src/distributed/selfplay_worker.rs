@@ -103,11 +103,15 @@ where
                     };
                     let mut client = client.clone();
                     let games_sent = games_sent.clone();
+                    let num_steps = data.len();
                     handle.spawn(async move {
                         if let Err(e) = client.submit_game(payload).await {
-                            eprintln!("submit_game failed: {e}");
+                            eprintln!("worker {worker_id}: submit_game failed: {e}");
                         } else {
                             games_sent.fetch_add(1, Ordering::Relaxed);
+                            println!(
+                                "worker {worker_id}: sent game ({num_steps} steps, reward={reward:.2})"
+                            );
                         }
                     });
                 }

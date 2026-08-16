@@ -15,9 +15,10 @@ use std::time::{Duration, Instant};
 use burn::module::{AutodiffModule, Module};
 use burn::record::CompactRecorder;
 use burn::tensor::backend::AutodiffBackend;
+use tokio::net::TcpListener;
 use tokio::sync::{oneshot, watch};
 use tokio_stream::StreamExt;
-use tokio_stream::wrappers::WatchStream;
+use tokio_stream::wrappers::{TcpListenerStream, WatchStream};
 use tonic::{Request, Response, Status, transport::Server};
 
 use mz_net::{
@@ -59,14 +60,23 @@ impl SelfPlayIngest for SelfPlayIngestSvc {
         &self,
         request: Request<GamePayload>,
     ) -> Result<Response<Ack>, Status> {
+        let peer = request
+            .remote_addr()
+            .map(|a| a.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
         let payload = request.into_inner();
         let data: Vec<BufferData> = rmp_serde::from_slice(&payload.data)
             .map_err(|e| Status::invalid_argument(format!("bad game payload: {e}")))?;
+        let num_steps = data.len();
         self.shared
             .buffer
             .lock()
             .expect("replay buffer mutex poisoned")
             .store_game(data, &self.mz_conf);
+        println!(
+            "coordinator: received game from {peer} ({num_steps} steps, reward={:.2})",
+            payload.total_reward
+        );
         Ok(Response::new(Ack {}))
     }
 
@@ -201,15 +211,28 @@ pub async fn run<TrainB, NT>(
     .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE)
     .max_encoding_message_size(MAX_GRPC_MESSAGE_SIZE);
 
-    let addr = listen_addr
+    let addr: std::net::SocketAddr = listen_addr
         .parse()
         .unwrap_or_else(|e| panic!("invalid distributed.listen_addr '{listen_addr}': {e}"));
 
+    let listener = TcpListener::bind(addr)
+        .await
+        .unwrap_or_else(|e| panic!("failed to bind {addr}: {e}"));
     println!("coordinator listening on {addr}");
+    let incoming = TcpListenerStream::new(listener).map(|conn| {
+        if let Ok(stream) = &conn {
+            match stream.peer_addr() {
+                Ok(peer) => println!("coordinator: new connection from {peer}"),
+                Err(e) => eprintln!("coordinator: accepted connection with no peer addr: {e}"),
+            }
+        }
+        conn
+    });
+
     Server::builder()
         .add_service(self_play_svc)
         .add_service(trainer_svc)
-        .serve(addr)
+        .serve_with_incoming(incoming)
         .await
         .expect("gRPC server failed");
 }
@@ -237,6 +260,7 @@ fn training_loop<TrainB, NT>(
     let mut next_checkpoint = training_step + mz_conf.checkpoint_interval as u64;
     let started = Instant::now();
     let mut last_print = Instant::now();
+    let mut last_print_step = training_step;
 
     while (training_step as usize) < mz_conf.training_steps {
         let has_batch = shared
@@ -340,14 +364,18 @@ fn training_loop<TrainB, NT>(
             next_checkpoint += mz_conf.checkpoint_interval as u64;
         }
 
-        if last_print.elapsed() >= Duration::from_secs(1) {
+        let elapsed = last_print.elapsed();
+        if elapsed >= Duration::from_secs(1) {
+            let steps_per_sec = (training_step - last_print_step) as f64 / elapsed.as_secs_f64();
             last_print = Instant::now();
+            last_print_step = training_step;
             println!(
-                "t={:.1} step={training_step} loss={:.4} consistency={:.4} workers_in_round={}",
+                "t={:.1} step={training_step} loss={:.4} consistency={:.4} workers_in_round={} steps/s={:.2}",
                 started.elapsed().as_secs_f64(),
                 metrics.total,
                 metrics.consistency,
                 others.len(),
+                steps_per_sec,
             );
         }
     }
