@@ -279,24 +279,47 @@ impl TrainingTui {
             global_progress: Progress::new(step, self.total_steps),
             iteration: Some(step),
         };
-        let mut counters = vec![
-            ProgressType::Value {
-                tag: format!(
-                    "Games (avg len {}, buffer {})",
-                    self.avg_game_length.round() as usize,
-                    self.buffer_states
-                ),
-                value: self.games_finished,
-            },
-            ProgressType::Value {
-                tag: format!("Env steps/s (train {})", self.last_tps.round() as usize),
-                value: self.last_sps.round() as usize,
-            },
-            ProgressType::Value {
-                tag: format!("Train steps (env {})", self.env_steps),
-                value: self.train_steps,
-            },
-        ];
+        let mut counters = if self.board_game {
+            vec![
+                ProgressType::Value {
+                    tag: format!(
+                        "Games (avg len {}, buffer {})",
+                        self.avg_game_length.round() as usize,
+                        self.buffer_states
+                    ),
+                    value: self.games_finished,
+                },
+                ProgressType::Value {
+                    tag: format!(
+                        "Steps/s env {} train {} (env {}, train {})",
+                        self.last_sps.round() as usize,
+                        self.last_tps.round() as usize,
+                        self.env_steps,
+                        self.train_steps
+                    ),
+                    value: self.train_steps,
+                },
+            ]
+        } else {
+            vec![
+                ProgressType::Value {
+                    tag: format!(
+                        "Games (avg len {}, buffer {})",
+                        self.avg_game_length.round() as usize,
+                        self.buffer_states
+                    ),
+                    value: self.games_finished,
+                },
+                ProgressType::Value {
+                    tag: format!("Env steps/s (train {})", self.last_tps.round() as usize),
+                    value: self.last_sps.round() as usize,
+                },
+                ProgressType::Value {
+                    tag: format!("Train steps (env {})", self.env_steps),
+                    value: self.train_steps,
+                },
+            ]
+        };
         if self.board_game {
             counters.push(ProgressType::Value {
                 tag: format!(
