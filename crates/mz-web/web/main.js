@@ -18,8 +18,14 @@ let game = null;
 let humanIsBlack = true;
 let busy = false;
 let prevBoard = null;
+// How long the flip animations from the human's just-played move still need
+// to play out; set by the render() that shows that move, consumed by
+// agentTurn() before it blocks the main thread on search.
+let pendingFlipSettleMs = 0;
 
 const FLIP_STEP_MS = 32;
+// Must match the animation-duration of .stone.flip-to-black/flip-to-white in style.css.
+const FLIP_DURATION_MS = 260;
 
 // Flips ripple outward from the placed stone along the flipped line, so
 // stagger each flip by its Chebyshev distance from the move that caused it.
@@ -51,11 +57,15 @@ function label(action) {
   return action === PASS ? "pass" : `${FILES[action % 8]}${Math.floor(action / 8) + 1}`;
 }
 
+// Returns how long (ms) the flip animations just started need to actually
+// finish playing, so callers about to block the main thread (the synchronous
+// search) can wait that out first instead of freezing mid-flip.
 function render() {
   const board = game.board();
   const legal = game.legal_mask();
   const last = game.last_move();
   const clickable = humanTurn() && !busy && !game.is_over();
+  let flipSettleMs = 0;
 
   cells.forEach((cell, square) => {
     const owner = board[square];
@@ -83,7 +93,9 @@ function render() {
     }
     cell.innerHTML = `<span class="${stoneClass}"></span>`;
     if (flipped) {
-      cell.firstElementChild.style.animationDelay = `${chebyshev(square, last) * FLIP_STEP_MS}ms`;
+      const delayMs = chebyshev(square, last) * FLIP_STEP_MS;
+      cell.firstElementChild.style.animationDelay = `${delayMs}ms`;
+      flipSettleMs = Math.max(flipSettleMs, delayMs + FLIP_DURATION_MS);
     }
   });
   prevBoard = Array.from(board);
@@ -112,6 +124,8 @@ function render() {
   } else {
     statusEl.textContent = "MuZero to move";
   }
+
+  return flipSettleMs;
 }
 
 function nextFrame() {
@@ -133,6 +147,15 @@ async function agentTurn() {
   // Force the human's stone + "thinking" spinner to paint before the search
   // (often synchronous GPU work) blocks the main thread.
   await nextFrame();
+  // The search below blocks the main thread for its whole duration, so the
+  // browser gets no chance to repaint until it's done. Wait out the human's
+  // pending flip animations for real here, or they'd freeze mid-flip and only
+  // resolve once the agent's move lands, making captures look like they wait
+  // for the opponent to move.
+  if (pendingFlipSettleMs > 0) {
+    await delay(pendingFlipSettleMs);
+    pendingFlipSettleMs = 0;
+  }
   // A fresh seed per move: the Gumbel noise is the agent's exploration.
   const [move] = await Promise.all([
     game.think(1 + Math.floor(Math.random() * 2 ** 40)),
@@ -169,7 +192,7 @@ async function onCellClick(square) {
     return;
   }
   evalEl.textContent = "";
-  render();
+  pendingFlipSettleMs = render();
   await settle();
 }
 
