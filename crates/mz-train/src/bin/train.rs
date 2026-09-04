@@ -10,7 +10,7 @@ use mz_rs::env::Environment;
 use mz_rs::async_train;
 use mz_rs::augment::Augmenter;
 use mz_rs::board_symmetry::BoardSymmetry;
-use mz_rs::eval::EloLadder;
+use mz_rs::eval::background::BackgroundLadder;
 use mz_rs::mz_config::{MuZeroConfig, SearchAlgorithm};
 use mz_rs::networks::{MuZeroNets, nets_to_backend};
 use mz_rs::optim::AnyOptimizer;
@@ -20,8 +20,8 @@ use mz_rs::train::{reanalyze, reanalyze_due, train};
 use mz_rs::tui_metrics::TrainingTui;
 use mz_rs::utils::{
     load_best_elo, load_buffer, load_env_steps, load_eval_state, load_games_played,
-    load_training_step, lr_for_step, save_best_elo, save_best_model, save_buffer, save_env_steps,
-    save_eval_state, save_games_played, save_training_step, select_device, tau_for_step,
+    load_training_step, lr_for_step, save_buffer, save_env_steps, save_games_played,
+    save_training_step, select_device, tau_for_step,
 };
 use mz_rs::{with_env, with_net};
 
@@ -38,6 +38,7 @@ fn main() {
     let device = select_device(mz_conf.training_backend);
     let train_device = DispatchDevice::autodiff(device.clone());
     let infer_device = select_device(mz_conf.inference_backend);
+    let eval_device = select_device(mz_conf.eval_backend);
 
     with_env!(mz_conf, E => {
         with_net!(mz_conf, Net => {
@@ -46,6 +47,7 @@ fn main() {
                 train_device.clone(),
                 device.clone(),
                 infer_device.clone(),
+                eval_device.clone(),
             );
         });
     });
@@ -56,13 +58,14 @@ fn run<E, TrainB, InferB, NT, NI>(
     train_device: TrainB::Device,
     inner_device: TrainB::Device,
     infer_device: InferB::Device,
+    eval_device: InferB::Device,
 ) where
     E: Environment<Action = usize> + Default + Clone,
     TrainB: AutodiffBackend,
     InferB: Backend,
     NT: MuZeroNets<TrainB> + AutodiffModule<TrainB>,
     NT::InnerModule: MuZeroNets<TrainB::InnerBackend>,
-    NI: MuZeroNets<InferB>,
+    NI: MuZeroNets<InferB> + 'static,
 {
     let ckpt_dir = mz_conf.checkpoint_dir();
     std::fs::create_dir_all(&ckpt_dir).expect("Failed to create directory");
@@ -117,6 +120,7 @@ fn run<E, TrainB, InferB, NT, NI>(
             train_device,
             inner_device,
             infer_device,
+            eval_device,
             training_step,
             best_elo,
         );
@@ -124,12 +128,12 @@ fn run<E, TrainB, InferB, NT, NI>(
     }
 
     let mut inference_agent: NI = nets_to_backend(&agent.valid(), mz_conf, &infer_device);
-    let mut ladder = EloLadder::new(mz_conf);
-    if mz_conf.load_from_checkpoint
-        && let Some((rung, _, _)) = load_eval_state(&format!("{ckpt_dir}/eval_state"))
-    {
-        ladder.set_current(rung);
-    }
+    let initial_rung = mz_conf
+        .load_from_checkpoint
+        .then(|| load_eval_state(&format!("{ckpt_dir}/eval_state")))
+        .flatten()
+        .map(|(rung, _, _)| rung);
+    let mut ladder = BackgroundLadder::<InferB>::new(mz_conf, eval_device, best_elo, initial_rung);
 
     let mut game_batch: Vec<Vec<BufferData>> = vec![Vec::new(); mz_conf.game_batch_size];
     let mut game_reward_batch = vec![0.0f32; mz_conf.game_batch_size];
@@ -219,19 +223,9 @@ fn run<E, TrainB, InferB, NT, NI>(
 
         // Evaluate against the benchmark opponent ladder
         if ladder.due(training_step) {
-            let reading = ladder.run(mz_conf, &inference_agent, &infer_device, training_step);
-            if reading.elo > best_elo {
-                let prev_best = best_elo.is_finite().then_some(best_elo);
-                best_elo = reading.elo;
-                save_best_model(&ckpt_dir, inference_agent.clone(), best_elo, prev_best);
-                save_best_elo(best_elo, &format!("{ckpt_dir}/best_elo"));
-            }
-            save_eval_state(
-                ladder.current(),
-                reading.elo,
-                &reading.opponent,
-                &format!("{ckpt_dir}/eval_state"),
-            );
+            ladder.spawn(mz_conf, &inference_agent, training_step);
+        }
+        if let Some(reading) = ladder.poll() {
             tui.set_eval(&reading);
         }
 

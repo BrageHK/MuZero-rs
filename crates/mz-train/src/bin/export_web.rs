@@ -1,8 +1,12 @@
-//! Converts a trained Othello checkpoint into the two artifacts `mz-web` embeds:
-//! a flat `.bin` record (no filesystem needed to load it) and the network/search
-//! constants as generated Rust.
+//! Converts a trained checkpoint (Othello or Chess, whichever `configs/config.yaml`
+//! says) into the two artifacts `mz-web` embeds: a flat `.bin` record (no
+//! filesystem needed to load it) and the network/search constants as generated
+//! Rust.
 //!
-//! `cargo run -r --bin export_web [checkpoint-without-extension]`
+//! Picks the checkpoint automatically from `mz_conf.checkpoint_dir()`: `latest`
+//! if present, otherwise the `model_best_{elo}` with the highest elo.
+//!
+//! `cargo run -r --bin export_web`
 
 use std::fs;
 use std::path::Path;
@@ -17,26 +21,51 @@ type B = NdArray;
 
 const ASSETS: &str = "crates/mz-web/assets";
 
+/// `latest` if the checkpoint dir has one, else whichever `model_best_*` the
+/// `best_elo` file points at. Elo isn't globally monotonic (it resets when the
+/// eval ladder promotes to a harder opponent), so the highest-numbered
+/// `model_best_*` file on disk isn't necessarily the best network — `best_elo`
+/// is the one the training loop itself considers best, so it's authoritative
+/// (same file `train.rs` reads on resume).
+/// Returns the checkpoint path without its `.mpk` extension, as `load_file` wants.
+fn pick_checkpoint(dir: &str) -> String {
+    if Path::new(dir).join("latest.mpk").is_file() {
+        return format!("{dir}/latest");
+    }
+
+    let best_elo_path = format!("{dir}/best_elo");
+    let elo: f32 = fs::read_to_string(&best_elo_path)
+        .unwrap_or_else(|e| panic!("No 'latest.mpk' in '{dir}' and failed to read '{best_elo_path}': {e}"))
+        .trim()
+        .parse()
+        .unwrap_or_else(|e| panic!("Failed to parse '{best_elo_path}': {e}"));
+
+    let path = format!("{dir}/model_best_{}", elo.round() as i64);
+    assert!(
+        Path::new(&format!("{path}.mpk")).is_file(),
+        "'{best_elo_path}' says {elo}, but '{path}.mpk' doesn't exist"
+    );
+    path
+}
+
 fn main() {
     let mz_conf = MuZeroConfig::default();
-    assert!(
-        matches!(mz_conf.environment, EnvironmentName::Othello),
-        "mz-web is Othello-only, but configs/config.yaml says {:?}",
-        mz_conf.environment
-    );
+    let name = match mz_conf.environment {
+        EnvironmentName::Othello => "othello",
+        EnvironmentName::Chess => "chess",
+        other => panic!("mz-web only supports Othello and Chess, but configs/config.yaml says {other:?}"),
+    };
     assert!(
         matches!(mz_conf.search_algorithm, SearchAlgorithm::Gumbel),
         "mz-web only implements Gumbel search, but configs/config.yaml says {:?}",
         mz_conf.search_algorithm
     );
 
-    let checkpoint = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| format!("{}/latest", mz_conf.checkpoint_dir()));
+    let checkpoint = pick_checkpoint(&mz_conf.checkpoint_dir());
     let device = Default::default();
 
     fs::create_dir_all(ASSETS).expect("Failed to create the assets directory");
-    let weights = Path::new(ASSETS).join("othello");
+    let weights = Path::new(ASSETS).join(name);
 
     // The checkpoint was trained with whatever `network_type` says, so the
     // export must build the matching family or the record fields won't line up.
@@ -165,7 +194,7 @@ fn main() {
         two_player = mz_conf.is_twoplayer,
     );
 
-    let config_path = Path::new(ASSETS).join("net_config.rs");
+    let config_path = Path::new(ASSETS).join(format!("{name}_net_config.rs"));
     fs::write(&config_path, generated).expect("Failed to write the web net config");
 
     let size = fs::metadata(format!("{}.bin", weights.display()))

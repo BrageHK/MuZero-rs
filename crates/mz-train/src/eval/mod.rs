@@ -1,8 +1,10 @@
+pub mod background;
 pub mod opponent;
 
 use burn::tensor::{Tensor, backend::Backend};
 use rayon::prelude::*;
 
+use crate::env::chess::env::Chess;
 use crate::env::othello::env::Othello;
 use crate::env::tictactoe::env::TicTacToe;
 use crate::eval::opponent::{BoardGame, Opponent, legal_actions};
@@ -134,6 +136,9 @@ impl EloLadder {
             }
             EnvironmentName::Othello => {
                 eval_games::<B, N, Othello>(&eval_conf, agent, device, &rung.opponent, &self.conf)
+            }
+            EnvironmentName::Chess => {
+                eval_games::<B, N, Chess>(&eval_conf, agent, device, &rung.opponent, &self.conf)
             }
             _ => unreachable!("ladder is empty for single-player environments"),
         };

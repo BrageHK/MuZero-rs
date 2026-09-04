@@ -96,7 +96,10 @@ fn bench_backend<B: burn::prelude::Backend>(
         });
 
         if elapsed.as_secs_f64() > MAX_RUN_SECS {
-            println!("(batch {batch} took {:.1}s, skipping larger batches for {backend:?})", elapsed.as_secs_f64());
+            println!(
+                "(batch {batch} took {:.1}s, skipping larger batches for {backend:?})",
+                elapsed.as_secs_f64()
+            );
             break;
         }
     }

@@ -13,7 +13,7 @@ use mz_core::othello::Othello;
 use mz_rs::env::Environment;
 use mz_rs::mz_config::{GumbelSubConfig, MuZeroConfig, SearchAlgorithm};
 use mz_rs::search::batched_search;
-use mz_web::model::SEARCH;
+use mz_web::model::othello::SEARCH;
 use mz_web::search::gumbel_search;
 
 type B = NdArray;

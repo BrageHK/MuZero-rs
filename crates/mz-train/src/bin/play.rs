@@ -8,6 +8,7 @@ use gym_rs::utils::renderer::{RenderColor, RenderFrame, RenderMode};
 use mz_rs::env::Environment;
 use mz_rs::env::atari::env::AtariEnv;
 use mz_rs::env::cartpole::env::CartPoleWrapper;
+use mz_rs::env::chess::env::Chess;
 use mz_rs::env::othello::env::{Othello, PASS};
 use mz_rs::env::tictactoe::env::TicTacToe;
 use mz_rs::mz_config::{EnvironmentName, MuZeroConfig};
@@ -18,8 +19,8 @@ use rand::prelude::*;
 
 trait Playable: Environment<Action = usize> + Default {
     fn render(&self) -> String;
-    fn parse_action(input: &str) -> Option<usize>;
-    fn action_label(action: usize) -> String;
+    fn parse_action(&self, input: &str) -> Option<usize>;
+    fn action_label(&self, action: usize) -> String;
 }
 
 impl Playable for TicTacToe {
@@ -27,14 +28,14 @@ impl Playable for TicTacToe {
         format!("{self}")
     }
 
-    fn parse_action(input: &str) -> Option<usize> {
+    fn parse_action(&self, input: &str) -> Option<usize> {
         match input.trim().parse::<usize>() {
             Ok(cell) if cell < 9 => Some(cell),
             _ => None,
         }
     }
 
-    fn action_label(action: usize) -> String {
+    fn action_label(&self, action: usize) -> String {
         action.to_string()
     }
 }
@@ -44,7 +45,7 @@ impl Playable for Othello {
         format!("{self}")
     }
 
-    fn parse_action(input: &str) -> Option<usize> {
+    fn parse_action(&self, input: &str) -> Option<usize> {
         let s = input.trim().to_ascii_lowercase();
         if s == "pass" {
             return Some(PASS);
@@ -64,7 +65,7 @@ impl Playable for Othello {
         }
     }
 
-    fn action_label(action: usize) -> String {
+    fn action_label(&self, action: usize) -> String {
         if action == PASS {
             "pass".to_string()
         } else {
@@ -75,18 +76,81 @@ impl Playable for Othello {
     }
 }
 
-fn legal_labels<E: Playable>(mask: &[bool]) -> String {
+/// UCI-style algebraic notation: `e2e4`, or `e7e8q` for a promotion.
+impl Playable for Chess {
+    fn render(&self) -> String {
+        let board = self.board();
+        let mut s = String::new();
+        for rank in (0..8).rev() {
+            s.push_str(&format!("{} ", rank + 1));
+            for file in 0..8 {
+                let sq = chess::Square::make_square(
+                    chess::Rank::from_index(rank),
+                    chess::File::from_index(file),
+                );
+                let cell = match (board.piece_on(sq), board.color_on(sq)) {
+                    (Some(piece), Some(color)) => piece.to_string(color),
+                    _ => ".".to_string(),
+                };
+                s.push_str(&cell);
+                s.push(' ');
+            }
+            s.push('\n');
+        }
+        s.push_str("  a b c d e f g h");
+        s
+    }
+
+    fn parse_action(&self, input: &str) -> Option<usize> {
+        let s = input.trim().to_ascii_lowercase();
+        let chars: Vec<char> = s.chars().collect();
+        if !(chars.len() == 4 || chars.len() == 5) {
+            return None;
+        }
+        let parse_sq = |file: char, rank: char| -> Option<chess::Square> {
+            let file = (file as u8).checked_sub(b'a')?;
+            let rank = (rank as u8).checked_sub(b'1')?;
+            (file < 8 && rank < 8).then(|| {
+                chess::Square::make_square(
+                    chess::Rank::from_index(rank as usize),
+                    chess::File::from_index(file as usize),
+                )
+            })
+        };
+        let source = parse_sq(chars[0], chars[1])?;
+        let dest = parse_sq(chars[2], chars[3])?;
+        let promotion = match chars.get(4) {
+            None => None,
+            Some('q') => Some(chess::Piece::Queen),
+            Some('r') => Some(chess::Piece::Rook),
+            Some('b') => Some(chess::Piece::Bishop),
+            Some('n') => Some(chess::Piece::Knight),
+            Some(_) => return None,
+        };
+        let mv = chess::ChessMove::new(source, dest, promotion);
+        self.board().legal(mv).then(|| self.move_to_action(mv))
+    }
+
+    fn action_label(&self, action: usize) -> String {
+        match self.action_to_move(action) {
+            Some(mv) => mv.to_string(),
+            None => "?".to_string(),
+        }
+    }
+}
+
+fn legal_labels<E: Playable>(env: &E, mask: &[bool]) -> String {
     mask.iter()
         .enumerate()
         .filter(|&(_, &l)| l)
-        .map(|(a, _)| E::action_label(a))
+        .map(|(a, _)| env.action_label(a))
         .collect::<Vec<_>>()
         .join(" ")
 }
 
-fn read_human_action<E: Playable>(mask: &[bool]) -> usize {
+fn read_human_action<E: Playable>(env: &E, mask: &[bool]) -> usize {
     loop {
-        print!("Your move (legal: {}): ", legal_labels::<E>(mask));
+        print!("Your move (legal: {}): ", legal_labels(env, mask));
         io::stdout().flush().unwrap();
 
         let mut line = String::new();
@@ -94,7 +158,7 @@ fn read_human_action<E: Playable>(mask: &[bool]) -> usize {
             std::process::exit(0);
         }
 
-        match E::parse_action(&line) {
+        match env.parse_action(&line) {
             Some(action) if mask.get(action).copied().unwrap_or(false) => return action,
             _ => println!("Illegal move, try again."),
         }
@@ -117,7 +181,7 @@ fn play_two_player<B: Backend, E: Playable>(
         let mask = env.legal_mask();
 
         let action = if human_turn {
-            read_human_action::<E>(&mask)
+            read_human_action(&env, &mask)
         } else {
             let obs = env.state_tensor::<B>(device);
             let results = batched_search(
@@ -132,12 +196,12 @@ fn play_two_player<B: Backend, E: Playable>(
             print!("Search distribution:");
             for (a, &p) in result.distribution.iter().enumerate() {
                 if mask[a] {
-                    print!(" {}={:.3}", E::action_label(a), p);
+                    print!(" {}={:.3}", env.action_label(a), p);
                 }
             }
             println!("\nValue: {:.3}", result.value);
             let action = result.best_action;
-            println!("Agent plays: {}", E::action_label(action));
+            println!("Agent plays: {}", env.action_label(action));
             action
         };
 
@@ -312,6 +376,10 @@ fn main() {
         EnvironmentName::Othello => {
             let human_first = prompt_human_first();
             play_two_player::<B, Othello>(&mz_conf, &agent, &device, human_first);
+        }
+        EnvironmentName::Chess => {
+            let human_first = prompt_human_first();
+            play_two_player::<B, Chess>(&mz_conf, &agent, &device, human_first);
         }
         EnvironmentName::CartPole => play_single_player::<B>(&mz_conf, &agent, &device),
         EnvironmentName::Atari => play_atari::<B>(&mz_conf, &agent, &device),

@@ -9,6 +9,7 @@ edition.workspace = true
 [dependencies]
 burn = { workspace = true, features = ["std"] }
 serde = { workspace = true }
+chess = "3.2.0"
 
 [features]
 # Backends are opt-in; mz-train and mz-web each pick their own.

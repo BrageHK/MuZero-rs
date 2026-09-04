@@ -1,7 +1,7 @@
 // Runs the wasm engine off the main thread so a slow Alpha-Beta search (fully
 // synchronous Rust, no yield points) or a long MuZero search never blocks the
 // page's UI thread — only this worker's own thread stalls while it computes.
-import init, { create } from "./pkg/mz_web.js";
+import init, { create } from "../pkg/mz_web.js";
 
 const PASS = 64;
 

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MuZero Othello</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <main>
+      <nav class="tabs">
+        <a class="tab back" href="../index.html" title="Back to games">← Games</a>
+        <a class="tab active" href="./index.html">Play</a>
+        <a class="tab" href="./arena.html">Bot Arena</a>
+      </nav>
+
+      <header>
+        <h1>Challenge MuZero</h1>
+        <p class="sub" id="backend">loading agent…</p>
+      </header>
+
+      <div class="score">
+        <div class="side" id="side-black">
+          <span class="disc black"></span>
+          <span class="count" id="count-black">2</span>
+        </div>
+        <div class="status" id="status">your move</div>
+        <div class="side" id="side-white">
+          <span class="count" id="count-white">2</span>
+          <span class="disc white"></span>
+        </div>
+      </div>
+
+      <div class="board" id="board" aria-label="Othello board"></div>
+
+      <div class="controls">
+        <button id="new-game">New game</button>
+        <button id="undo" disabled>Undo</button>
+        <label class="colour">
+          <span>You play</span>
+          <select id="colour">
+            <option value="black" selected>black</option>
+            <option value="white">white</option>
+          </select>
+        </label>
+        <label class="sims">
+          <span>Simulations</span>
+          <select id="sims">
+            <option value="8">Low (8)</option>
+            <option value="64">Medium (64)</option>
+            <option value="128" selected>Standard (128)</option>
+            <option value="256">High (256)</option>
+            <option value="800">Maximum (800)</option>
+          </select>
+        </label>
+      </div>
+
+      <p class="hint" id="hint">More simulations means stronger play but longer thinking time per move.</p>
+
+      <p class="eval" id="eval"></p>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

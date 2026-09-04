@@ -57,6 +57,7 @@ pub enum EnvironmentName {
     CartPole,
     TicTacToe,
     Othello,
+    Chess,
     Atari,
 }
 
@@ -181,6 +182,24 @@ pub fn default_ladder(environment: &EnvironmentName) -> Vec<RungConfig> {
                 elo: 900.0,
             },
         ],
+        EnvironmentName::Chess => vec![
+            RungConfig::Random { elo: 0.0 },
+            RungConfig::AlphaBeta {
+                depth: 1,
+                epsilon: 0.1,
+                elo: 400.0,
+            },
+            RungConfig::AlphaBeta {
+                depth: 2,
+                epsilon: 0.05,
+                elo: 800.0,
+            },
+            RungConfig::AlphaBeta {
+                depth: 3,
+                epsilon: 0.0,
+                elo: 1200.0,
+            },
+        ],
         EnvironmentName::CartPole | EnvironmentName::Atari => Vec::new(),
     }
 }
@@ -287,6 +306,8 @@ pub struct MuZeroConfig {
     pub training_backend: BackendChoice,
     #[serde(default)]
     pub inference_backend: BackendChoice,
+    #[serde(default)]
+    pub eval_backend: BackendChoice,
 
     pub checkpoint_name: String,
 
@@ -474,7 +495,7 @@ fn validate(conf: &MuZeroConfig) {
         if let Some(ladder) = eval.ladder.as_ref() {
             assert!(
                 !default_ladder(&conf.environment).is_empty(),
-                "eval.ladder is only supported for board games (TicTacToe, Othello)"
+                "eval.ladder is only supported for board games (TicTacToe, Othello, Chess)"
             );
             assert!(
                 !ladder.is_empty(),
@@ -586,9 +607,16 @@ impl MuZeroConfig {
 
     /// Board games on a square board (Othello, TicTacToe) are invariant under
     /// the 8-cell dihedral group; the replay buffer samples a random rotation/
-    /// reflection per game to multiply effective self-play data.
+    /// reflection per game to multiply effective self-play data. Chess is also
+    /// played on a square board but is not dihedrally symmetric (pawns only
+    /// move one way, castling is side-specific, and the move encoding's 73
+    /// direction/knight/underpromotion planes don't rotate with the board), so
+    /// it is excluded even though it satisfies the square-board check.
     pub fn board_symmetric(&self) -> bool {
-        self.is_twoplayer && self.board_height > 0 && self.board_height == self.board_width
+        self.is_twoplayer
+            && self.board_height > 0
+            && self.board_height == self.board_width
+            && !matches!(self.environment, EnvironmentName::Chess)
     }
 
     /// The subset of the config that shapes the networks; the only part `mz-web`
@@ -654,6 +682,32 @@ mod tests {
     fn shipped_config_parses_and_builds_resnet() {
         let conf = MuZeroConfig::default();
         assert_eq!(conf.network_type, NetworkType::ResNet);
+
+        let device = Default::default();
+        let _nets: ResNets<NdArray<f32>> = conf.init(&device);
+    }
+
+    /// Doesn't touch `configs/config.yaml`'s `environment:` (that stays whatever
+    /// the shipped default is): reuses its ResNet hyperparameters but swaps in
+    /// Chess's `EnvInfo` by hand, the way `get_conf` would for `environment: Chess`.
+    #[test]
+    fn chess_env_info_builds_a_resnet() {
+        let mut conf = MuZeroConfig::default();
+        let info = <crate::env::chess::env::Chess as Environment>::INFO;
+
+        conf.environment = EnvironmentName::Chess;
+        conf.obs_dim = info.obs_dim();
+        conf.action_space = info.action_size;
+        conf.is_twoplayer = info.num_players > 1;
+        let shape = info.obs_shape;
+        conf.board_height = shape[shape.len() - 2];
+        conf.board_width = shape[shape.len() - 1];
+        conf.obs_channels = shape[..shape.len() - 2].iter().product::<usize>().max(1);
+
+        assert!(
+            !conf.board_symmetric(),
+            "chess must opt out of dihedral augmentation"
+        );
 
         let device = Default::default();
         let _nets: ResNets<NdArray<f32>> = conf.init(&device);

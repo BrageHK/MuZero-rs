@@ -1,3 +1,4 @@
+pub mod chess;
 pub mod config;
 pub mod networks;
 pub mod othello;

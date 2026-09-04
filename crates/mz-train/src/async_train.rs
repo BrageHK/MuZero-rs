@@ -21,7 +21,8 @@ use rand_distr::weighted::WeightedIndex;
 use crate::augment::Augmenter;
 use crate::board_symmetry::BoardSymmetry;
 use crate::env::Environment;
-use crate::eval::{EloLadder, EvalReading};
+use crate::eval::EvalReading;
+use crate::eval::background::BackgroundLadder;
 use crate::mz_config::{MuZeroConfig, SearchAlgorithm};
 use crate::networks::{MuZeroNets, nets_from_bytes, nets_to_bytes};
 use crate::optim::AnyOptimizer;
@@ -30,8 +31,8 @@ use crate::search::batched_search;
 use crate::train::{reanalyze, reanalyze_due, train};
 use crate::tui_metrics::TrainingTui;
 use crate::utils::{
-    load_eval_state, lr_for_step, save_best_elo, save_best_model, save_buffer, save_env_steps,
-    save_eval_state, save_games_played, save_training_step, tau_for_step,
+    load_eval_state, lr_for_step, save_buffer, save_env_steps, save_games_played,
+    save_training_step, tau_for_step,
 };
 
 const RENDER_INTERVAL: Duration = Duration::from_millis(50);
@@ -64,6 +65,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
     train_device: TrainB::Device,
     inner_device: TrainB::Device,
     infer_device: InferB::Device,
+    eval_device: InferB::Device,
     initial_training_step: usize,
     initial_best_elo: f32,
 ) where
@@ -72,7 +74,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
     InferB: Backend,
     NT: MuZeroNets<TrainB> + AutodiffModule<TrainB>,
     NT::InnerModule: MuZeroNets<TrainB::InnerBackend>,
-    NI: MuZeroNets<InferB>,
+    NI: MuZeroNets<InferB> + 'static,
 {
     let (game_tx, game_rx) = channel::<SelfPlayMsg>();
     let (weight_tx, weight_rx) = channel::<WeightMsg>();
@@ -87,6 +89,7 @@ pub fn run<E, TrainB, InferB, NT, NI>(
                 mz_conf,
                 initial_weights,
                 infer_device,
+                eval_device,
                 game_tx,
                 weight_rx,
                 self_play_interrupter,
@@ -120,6 +123,7 @@ fn self_play<E, InferB, N>(
     mz_conf: &MuZeroConfig,
     initial_weights: Vec<u8>,
     infer_device: InferB::Device,
+    eval_device: InferB::Device,
     tx: Sender<SelfPlayMsg>,
     weights: Receiver<WeightMsg>,
     interrupter: Interrupter,
@@ -128,19 +132,19 @@ fn self_play<E, InferB, N>(
 ) where
     E: Environment<Action = usize> + Default + Clone,
     InferB: Backend,
-    N: MuZeroNets<InferB>,
+    N: MuZeroNets<InferB> + 'static,
 {
     let net_conf = mz_conf.net_config();
     let mut agent: N = nets_from_bytes(initial_weights, &net_conf, &infer_device);
-    let mut ladder = EloLadder::new(mz_conf);
-    let mut training_step = initial_training_step;
-    let mut best_elo = initial_best_elo;
     let ckpt_dir = mz_conf.checkpoint_dir();
-    if mz_conf.load_from_checkpoint
-        && let Some((rung, _, _)) = load_eval_state(&format!("{ckpt_dir}/eval_state"))
-    {
-        ladder.set_current(rung);
-    }
+    let initial_rung = mz_conf
+        .load_from_checkpoint
+        .then(|| load_eval_state(&format!("{ckpt_dir}/eval_state")))
+        .flatten()
+        .map(|(rung, _, _)| rung);
+    let mut ladder =
+        BackgroundLadder::<InferB>::new(mz_conf, eval_device, initial_best_elo, initial_rung);
+    let mut training_step = initial_training_step;
 
     let mut game_batch: Vec<Vec<BufferData>> = vec![Vec::new(); mz_conf.game_batch_size];
     let mut game_reward_batch = vec![0.0f32; mz_conf.game_batch_size];
@@ -225,22 +229,12 @@ fn self_play<E, InferB, N>(
         }
 
         if ladder.due(training_step) {
-            let reading = ladder.run(mz_conf, &agent, &infer_device, training_step);
-            if reading.elo > best_elo {
-                let prev_best = best_elo.is_finite().then_some(best_elo);
-                best_elo = reading.elo;
-                save_best_model(&ckpt_dir, agent.clone(), best_elo, prev_best);
-                save_best_elo(best_elo, &format!("{ckpt_dir}/best_elo"));
-            }
-            save_eval_state(
-                ladder.current(),
-                reading.elo,
-                &reading.opponent,
-                &format!("{ckpt_dir}/eval_state"),
-            );
-            if tx.send(SelfPlayMsg::Eval(reading)).is_err() {
-                return;
-            }
+            ladder.spawn(mz_conf, &agent, training_step);
+        }
+        if let Some(reading) = ladder.poll()
+            && tx.send(SelfPlayMsg::Eval(reading)).is_err()
+        {
+            return;
         }
     }
 }

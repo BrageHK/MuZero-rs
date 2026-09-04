@@ -3,12 +3,18 @@
 build: ## Build release binary with backends from config.yaml
 	TRAIN_BACKEND=$$(yq -r '.training_backend' configs/config.yaml); \
 	INFERENCE_BACKEND=$$(yq -r '.inference_backend' configs/config.yaml); \
-	cargo build -r --features="$$TRAIN_BACKEND,$$INFERENCE_BACKEND"
+	EVAL_BACKEND=$$(yq -r '.eval_backend' configs/config.yaml); \
+	FEATURES=$$(echo "$$TRAIN_BACKEND,$$INFERENCE_BACKEND,$$EVAL_BACKEND" | tr ',' '\n' | sed -e 's/^libtorch-gpu$$/tch/' -e 's/^libtorch$$/tch/' -e '/^auto$$/d' -e '/^flex$$/d' | sort -u | paste -sd, -); \
+	cargo build -r --features="$$FEATURES"
 
 train: ## Run training with backends from config.yaml
 	TRAIN_BACKEND=$$(yq -r '.training_backend' configs/config.yaml); \
 	INFERENCE_BACKEND=$$(yq -r '.inference_backend' configs/config.yaml); \
-	cargo run -r -p mz-train --bin train --features="$$TRAIN_BACKEND,$$INFERENCE_BACKEND"
+	EVAL_BACKEND=$$(yq -r '.eval_backend' configs/config.yaml); \
+	FEATURES=$$(echo "$$TRAIN_BACKEND,$$INFERENCE_BACKEND,$$EVAL_BACKEND" | tr ',' '\n' | sed -e 's/^libtorch-gpu$$/tch/' -e 's/^libtorch$$/tch/' -e '/^auto$$/d' -e '/^flex$$/d' | sort -u | paste -sd, -); \
+	cargo run -r -p mz-train --bin train --features="$$FEATURES"
+
+bench: benchmark
 
 benchmark: ## Sweep inference batch sizes across all backends
 	cargo run -r -p mz-train --bin resnet_infer_bench --features "tch,vulkan,rocm"

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MuZero Chess</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <main>
+      <nav class="tabs">
+        <a class="tab back" href="../index.html" title="Back to games">← Games</a>
+        <a class="tab active" href="./index.html">Play</a>
+      </nav>
+
+      <header>
+        <h1>Practice Chess</h1>
+        <p class="sub" id="backend">loading bot…</p>
+      </header>
+
+      <div class="score">
+        <div class="side" id="side-white">
+          <span class="disc white"></span>
+          <span class="name" id="name-white">You</span>
+        </div>
+        <div class="status" id="status">your move</div>
+        <div class="side" id="side-black">
+          <span class="name" id="name-black">Bot</span>
+          <span class="disc black"></span>
+        </div>
+      </div>
+
+      <div class="board chess-board" id="board" aria-label="Chess board"></div>
+
+      <div class="promotion" id="promotion" hidden>
+        <span>Promote to</span>
+        <button data-piece="q" title="Queen">♛</button>
+        <button data-piece="r" title="Rook">♜</button>
+        <button data-piece="b" title="Bishop">♝</button>
+        <button data-piece="n" title="Knight">♞</button>
+      </div>
+
+      <div class="controls">
+        <button id="new-game">New game</button>
+        <label class="colour">
+          <span>You play</span>
+          <select id="colour">
+            <option value="white" selected>white</option>
+            <option value="black">black</option>
+          </select>
+        </label>
+        <label class="engine">
+          <span>Opponent</span>
+          <select id="engine">
+            <option value="alphabeta" selected>Alpha-beta (heuristic)</option>
+            <option value="muzero">MuZero (trained)</option>
+          </select>
+        </label>
+        <label class="sims" id="strength-label">
+          <span>Bot strength</span>
+          <select id="strength">
+            <option value="1">Low (depth 1)</option>
+            <option value="2" selected>Medium (depth 2)</option>
+            <option value="3">High (depth 3)</option>
+            <option value="4">Maximum (depth 4)</option>
+          </select>
+        </label>
+        <label class="sims" id="sims-label" hidden>
+          <span>Bot strength</span>
+          <select id="sims">
+            <option value="8">Low (8)</option>
+            <option value="64">Medium (64)</option>
+            <option value="128" selected>Standard (128)</option>
+            <option value="256">High (256)</option>
+            <option value="800">Maximum (800)</option>
+          </select>
+        </label>
+      </div>
+
+      <p class="hint" id="hint">
+        Click a piece, then click a highlighted square to move it. Alpha-beta is a search over material and
+        piece-square tables; MuZero is the trained self-play agent.
+      </p>
+
+      <p class="eval" id="eval"></p>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

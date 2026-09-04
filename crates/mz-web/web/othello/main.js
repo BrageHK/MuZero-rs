@@ -228,7 +228,7 @@ simsEl.addEventListener("change", () => {
 });
 
 async function main() {
-  const mod = await import("./pkg/mz_web.js");
+  const mod = await import("../pkg/mz_web.js");
   await mod.default();
   game = await mod.create(Number(simsEl.value));
   simsEl.value = String(game.simulations());

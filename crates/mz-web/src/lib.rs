@@ -1,3 +1,5 @@
+pub mod chess_bot;
+pub mod chess_game;
 pub mod model;
 pub mod opponent;
 pub mod rng;
@@ -5,7 +7,8 @@ pub mod search;
 
 use mz_core::othello::{Othello, PASS};
 
-use crate::model::{Be, Device, Net, SEARCH};
+use crate::model::othello::{Net, SEARCH};
+use crate::model::{Be, Device};
 use crate::opponent::Opponent;
 use crate::rng::Rng;
 use crate::search::gumbel_search;
@@ -46,7 +49,7 @@ pub async fn create(simulations: u32) -> Game {
     model::init_backend(&device).await;
     Game {
         env: Othello::new(),
-        net: model::load(&device),
+        net: model::othello::load(&device),
         device,
         simulations: (simulations as usize).clamp(1, 800),
         history: Vec::new(),
