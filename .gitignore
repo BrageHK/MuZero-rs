@@ -30,7 +30,7 @@ psudocode/*
 
 .vscode
 build/
-model/
-model.bak/
-model_*/
+/model/
+/model.bak/
+/model_*/
 vendor/
