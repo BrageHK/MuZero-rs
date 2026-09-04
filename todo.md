@@ -12,6 +12,8 @@
 - [x] Gumbel search and iterative halving
 - [x] SimSam training for the dynamics model
 - [x] WASM website for Othello
-- [ ] Chess support
-- [ ] WASM chess
+- [x] Chess support
+- [x] WASM chess
 - [x] Add support for ALE
+- [ ] Actually good chess engine
+

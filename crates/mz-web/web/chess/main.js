@@ -17,14 +17,18 @@ const simsLabelEl = document.getElementById("sims-label");
 const simsEl = document.getElementById("sims");
 const promotionEl = document.getElementById("promotion");
 
-// The board state of record lives here in chess.js. `chess_bot_move` (alpha-beta,
-// see `crates/mz-web/src/chess_bot.rs`) is stateless FEN-in/UCI-out and never sees
-// more than the current FEN. The MuZero opponent (`crates/mz-web/src/chess_game.rs`)
-// is stateful instead — its net was trained on up to 8 plies of history, so every
-// committed move (human or bot) is replayed into it via `play_uci` to keep that
+// The board state of record lives here in chess.js. Both bots run in
+// `worker.js`, off the main thread, so a slow Alpha-Beta search or a long
+// MuZero search never blocks the page's UI. `chess_bot_move` (alpha-beta,
+// see `crates/mz-web/src/chess_bot.rs`) is stateless FEN-in/UCI-out and never
+// sees more than the current FEN. The MuZero opponent
+// (`crates/mz-web/src/chess_game.rs`) is stateful instead — its net was
+// trained on up to 8 plies of history, so every committed move (human or
+// bot) is mirrored into the worker's copy via `play_uci` to keep that
 // history correct, not just handed the latest FEN.
-let wasmBotMove = null;
-let chessGame = null;
+let worker = null;
+let genId = 0;
+let pendingThink = null; // { genId, resolve } for the in-flight "think" request, if any
 
 const FILES = "abcdefgh";
 // Both colors use the same (filled) glyph shapes and are told apart purely by
@@ -147,13 +151,11 @@ function moveToUci(move) {
   return move.from + move.to + (move.promotion ?? "");
 }
 
-// Mirrors a move already committed to chess.js into the wasm MuZero engine, so
-// its history-dependent observation stays correct regardless of which engine
-// is currently selected.
+// Mirrors a move already committed to chess.js into the worker's MuZero
+// engine, so its history-dependent observation stays correct regardless of
+// which engine is currently selected.
 function mirrorMove(move) {
-  if (chessGame && !chessGame.play_uci(moveToUci(move))) {
-    console.error(`chessGame rejected ${moveToUci(move)} — engine state has diverged from chess.js`);
-  }
+  worker.postMessage({ type: "mirrorMove", uci: moveToUci(move) });
 }
 
 async function attemptMove(from, to) {
@@ -235,18 +237,22 @@ function uciToMove(uci) {
   return chess.moves({ square: from, verbose: true }).find((m) => m.to === to && (promotion == null || m.promotion === promotion));
 }
 
-let lastValue = null;
-
-async function pickBotMove() {
-  const seed = 1 + Math.floor(Math.random() * 2 ** 40);
-  if (engineEl.value === "muzero") {
-    const result = await chessGame.think(seed);
-    lastValue = result.value;
-    return uciToMove(result.uci);
-  }
-  const depth = Number(strengthEl.value);
-  lastValue = null;
-  return uciToMove(wasmBotMove(chess.fen(), depth, seed));
+// Posts a "think" request to the worker and resolves with its "thought"
+// reply. Guarded by genId so a reply for a game superseded by `newGame()`
+// while the worker was still computing gets dropped instead of applied.
+function requestThink(id) {
+  return new Promise((resolve) => {
+    pendingThink = { genId: id, resolve };
+    const seed = 1 + Math.floor(Math.random() * 2 ** 40);
+    worker.postMessage({
+      type: "think",
+      genId: id,
+      engine: engineEl.value,
+      fen: chess.fen(),
+      depth: Number(strengthEl.value),
+      seed,
+    });
+  });
 }
 
 // Search with so few plies finishes instantly — too fast to read as
@@ -257,13 +263,17 @@ const MIN_THINK_MS = 400;
 async function botTurn() {
   busy = true;
   render();
-  const move = await pickBotMove();
-  await delay(MIN_THINK_MS);
+  const id = genId;
+  const [result] = await Promise.all([requestThink(id), delay(MIN_THINK_MS)]);
+  if (id !== genId) {
+    return;
+  }
   busy = false;
+  const move = uciToMove(result.uci);
   if (move) {
     chess.move(move);
     mirrorMove(move);
-    evalEl.textContent = lastValue == null ? `bot played ${move.san}` : `bot played ${move.san} (value ${lastValue.toFixed(2)})`;
+    evalEl.textContent = result.value == null ? `bot played ${move.san}` : `bot played ${move.san} (value ${result.value.toFixed(2)})`;
   }
   render();
   await settle();
@@ -279,8 +289,10 @@ async function settle() {
 }
 
 async function newGame() {
+  genId += 1;
+  pendingThink = null;
   chess = new Chess();
-  chessGame?.reset();
+  worker.postMessage({ type: "reset" });
   humanColor = colourEl.value === "white" ? "w" : "b";
   whiteAtBottom = humanColor === "w";
   clearSelection();
@@ -304,12 +316,25 @@ engineEl.addEventListener("change", () => {
 });
 
 async function main() {
-  const mod = await import("../pkg/mz_web.js");
-  await mod.default();
-  wasmBotMove = mod.chess_bot_move;
   backendEl.textContent = "loading MuZero weights…";
-  chessGame = await mod.create_chess(Number(simsEl.value));
-  simsEl.addEventListener("change", () => chessGame.set_simulations(Number(simsEl.value)));
+  worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+  await new Promise((resolve) => {
+    worker.onmessage = (event) => {
+      if (event.data.type === "boot") {
+        resolve();
+      }
+    };
+  });
+  worker.onmessage = (event) => {
+    const msg = event.data;
+    if (msg.type === "thought" && pendingThink && msg.genId === pendingThink.genId) {
+      const resolve = pendingThink.resolve;
+      pendingThink = null;
+      resolve(msg);
+    }
+  };
+  worker.postMessage({ type: "setSims", sims: Number(simsEl.value) });
+  simsEl.addEventListener("change", () => worker.postMessage({ type: "setSims", sims: Number(simsEl.value) }));
   backendEl.textContent = "alpha-beta search or the trained MuZero agent, both via WASM";
   await newGame();
 }

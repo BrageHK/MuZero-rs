@@ -53,11 +53,11 @@
         <label class="engine">
           <span>Opponent</span>
           <select id="engine">
-            <option value="alphabeta" selected>Alpha-beta (heuristic)</option>
-            <option value="muzero">MuZero (trained)</option>
+            <option value="alphabeta">Alpha-beta (heuristic)</option>
+            <option value="muzero" selected>MuZero (trained)</option>
           </select>
         </label>
-        <label class="sims" id="strength-label">
+        <label class="sims" id="strength-label" hidden>
           <span>Bot strength</span>
           <select id="strength">
             <option value="1">Low (depth 1)</option>
@@ -66,7 +66,7 @@
             <option value="4">Maximum (depth 4)</option>
           </select>
         </label>
-        <label class="sims" id="sims-label" hidden>
+        <label class="sims" id="sims-label">
           <span>Bot strength</span>
           <select id="sims">
             <option value="8">Low (8)</option>
