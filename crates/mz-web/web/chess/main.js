@@ -34,10 +34,13 @@ const FILES = "abcdefgh";
 // Both colors use the same (filled) glyph shapes and are told apart purely by
 // CSS color — the outline "white" chess codepoints (U+2654-2659) render
 // solid/filled in several common Linux fonts (DejaVu, Noto Sans Symbols),
-// which made white pieces look black.
+// which made white pieces look black. Each glyph also carries the U+FE0E
+// text-presentation selector so mobile browsers don't hand them to a color
+// emoji font instead — that font draws fixed dark artwork that ignores our
+// CSS `color`, which made white pieces look black again on mobile.
 const GLYPH = {
-  w: { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" },
-  b: { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" },
+  w: { p: "♟︎", n: "♞︎", b: "♝︎", r: "♜︎", q: "♛︎", k: "♚︎" },
+  b: { p: "♟︎", n: "♞︎", b: "♝︎", r: "♜︎", q: "♛︎", k: "♚︎" },
 };
 
 let chess = new Chess();
@@ -104,7 +107,7 @@ function render() {
     cell.classList.toggle("legal", clickable && legalSquares.has(square));
     cell.classList.toggle("check", square === checkSquare);
 
-    cell.innerHTML = piece ? `<span class="piece ${piece.color === "w" ? "white" : "black"}">${GLYPH[piece.color][piece.type]}</span>` : "";
+    cell.innerHTML = piece ? `<span class="piece ${piece.color === "w" ? "white" : "black"} ${piece.type}">${GLYPH[piece.color][piece.type]}</span>` : "";
   });
 
   nameWhiteEl.textContent = humanColor === "w" ? "You" : "Bot";
