@@ -54,7 +54,8 @@
           <span>Opponent</span>
           <select id="engine">
             <option value="alphabeta">Alpha-beta (heuristic)</option>
-            <option value="muzero" selected>MuZero (trained)</option>
+            <option value="muzero">MuZero (trained)</option>
+            <option value="bee-mamba" selected>Bee-Mamba (trained)</option>
           </select>
         </label>
         <label class="sims" id="strength-label" hidden>
@@ -66,7 +67,7 @@
             <option value="4">Maximum (depth 4)</option>
           </select>
         </label>
-        <label class="sims" id="sims-label">
+        <label class="sims" id="sims-label" hidden>
           <span>Bot strength</span>
           <select id="sims">
             <option value="8">Low (8)</option>
@@ -80,7 +81,8 @@
 
       <p class="hint" id="hint">
         Click a piece, then click a highlighted square to move it. Alpha-beta is a search over material and
-        piece-square tables; MuZero is the trained self-play agent.
+        piece-square tables; MuZero is the trained self-play agent; Bee-Mamba is a separate, searchless
+        Mamba/attention model that plays its policy head's top move directly.
       </p>
 
       <p class="eval" id="eval"></p>

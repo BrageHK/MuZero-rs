@@ -1,4 +1,5 @@
 pub mod chess;
+pub mod chess_mamba;
 pub mod othello;
 
 use burn::tensor::backend::BackendTypes;

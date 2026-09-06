@@ -310,9 +310,10 @@ newGameEl.addEventListener("click", () => {
 });
 colourEl.addEventListener("change", () => newGame());
 engineEl.addEventListener("change", () => {
-  const muzero = engineEl.value === "muzero";
-  strengthLabelEl.hidden = muzero;
-  simsLabelEl.hidden = !muzero;
+  // Bee-Mamba is a single forward pass -- no depth (alpha-beta) or
+  // simulation count (MuZero) to tune, so both stay hidden for it.
+  strengthLabelEl.hidden = engineEl.value !== "alphabeta";
+  simsLabelEl.hidden = engineEl.value !== "muzero";
 });
 
 async function main() {

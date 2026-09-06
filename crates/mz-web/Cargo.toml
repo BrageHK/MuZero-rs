@@ -11,6 +11,10 @@ crate-type = ["cdylib", "rlib"]
 mz-core = { path = "../mz-core" }
 chess = "3.2.0"
 burn = { workspace = true, features = ["std"] }
+# Runtime dependency of the code build.rs generates from onnx/chess_mamba.onnx
+# (see model/chess_mamba.rs) -- burn-onnx's generated `Model` loads its
+# embedded weights through `burn_store::BurnpackStore`.
+burn-store = "~0.21"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
@@ -20,6 +24,12 @@ console_error_panic_hook = "0.1"
 # wasm32-unknown-unknown; the browser one is behind this feature.
 [target.'cfg(target_family = "wasm")'.dependencies]
 getrandom = { version = "0.4", features = ["wasm_js"] }
+
+[build-dependencies]
+# Converts onnx/chess_mamba.onnx (ChessMamba, exported from the separate
+# bee-chess repo's training/src/bee_training/chess_mamba/export_onnx.py)
+# into a Burn module at build time -- see build.rs.
+burn-onnx = { workspace = true }
 
 [dev-dependencies]
 mz-train = { path = "../mz-train", default-features = false, features = ["ndarray"] }
