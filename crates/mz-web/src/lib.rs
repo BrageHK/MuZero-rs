@@ -1,6 +1,7 @@
 pub mod chess_bot;
 pub mod chess_game;
 pub mod chess_mamba_bot;
+pub mod chess_mamba_mcts;
 pub mod model;
 pub mod opponent;
 pub mod rng;

@@ -27,14 +27,16 @@ use crate::model::{self, Be};
 // types x 2 colors) + 8 auxiliary scalars broadcast to every square.
 const N_PIECE_TYPES: usize = 12;
 const N_AUX: usize = 8;
-const IN_DIM: usize = N_PIECE_TYPES + N_AUX;
+pub(crate) const IN_DIM: usize = N_PIECE_TYPES + N_AUX;
 
-/// `fen` -> flat (64 * IN_DIM) row-major (square, channel) plane data, the
-/// same layout `encode_fen`'s (64, IN_DIM) tensor flattens to. `board` is
-/// parsed from the same `fen` by the caller; passed in separately only so
-/// the halfmove clock (below) can be read from the original string, since
-/// `chess::Board` itself doesn't retain it.
-fn encode_fen(fen: &str, board: &Board) -> [f32; 64 * IN_DIM] {
+/// `board` -> flat (64 * IN_DIM) row-major (square, channel) plane data, the
+/// same layout `encode_fen`'s (64, IN_DIM) tensor flattens to. `chess::Board`
+/// itself doesn't track the halfmove clock, so it's passed in separately
+/// rather than read off the board -- `encode_fen` below reads it from a FEN
+/// string for the top-level entry point; `chess_mamba_mcts` (which walks
+/// `Board`s it built itself by applying moves, with no FEN in hand) tracks it
+/// incrementally instead. See that module for why.
+pub(crate) fn encode_board(board: &Board, halfmove_clock: f32) -> [f32; 64 * IN_DIM] {
     let mut planes = [0f32; 64 * IN_DIM];
 
     for square in ALL_SQUARES {
@@ -43,11 +45,6 @@ fn encode_fen(fen: &str, board: &Board) -> [f32; 64 * IN_DIM] {
             planes[square.to_index() * IN_DIM + piece.to_index() + color_offset] = 1.0;
         }
     }
-
-    // `chess::Board` doesn't track the halfmove clock (see its FEN parsing),
-    // so read it straight out of the FEN's 5th field; malformed/missing
-    // falls back to 0, same as a fresh game.
-    let halfmove_clock: f32 = fen.split_whitespace().nth(4).and_then(|s| s.parse().ok()).unwrap_or(0.0);
 
     let white_castle = board.castle_rights(Color::White);
     let black_castle = board.castle_rights(Color::Black);
@@ -67,6 +64,14 @@ fn encode_fen(fen: &str, board: &Board) -> [f32; 64 * IN_DIM] {
     }
 
     planes
+}
+
+/// `fen` -> flat (64 * IN_DIM) plane data, reading the halfmove clock off
+/// `fen`'s 5th field (`chess::Board` doesn't retain it -- see
+/// `encode_board`); malformed/missing falls back to 0, same as a fresh game.
+fn encode_fen(fen: &str, board: &Board) -> [f32; 64 * IN_DIM] {
+    let halfmove_clock: f32 = fen.split_whitespace().nth(4).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+    encode_board(board, halfmove_clock)
 }
 
 /// Every legal move for the position given as FEN, ranked best-first by the
@@ -144,6 +149,21 @@ impl ChessMambaBot {
     /// state, instead of leaving the game stuck.
     pub fn ranked_moves(&self, fen: &str) -> Vec<String> {
         ranked_moves_uci(&self.model, &self.device, fen)
+    }
+
+    /// Value-guided alternative to `best_move`: runs `simulations` steps of
+    /// the lc0-inspired PUCT search in `chess_mamba_mcts` instead of just
+    /// argmaxing the policy head. `threads > 1` tree-parallelizes with
+    /// virtual loss on native; on wasm it always runs sequentially
+    /// regardless of `threads` (see that module's docstring). `None` if the
+    /// FEN is malformed or the position has no legal move.
+    pub fn best_move_mcts(&self, fen: &str, simulations: u32, threads: u32) -> Option<String> {
+        let cfg = crate::chess_mamba_mcts::SearchConfig {
+            simulations: simulations as usize,
+            threads: threads.max(1) as usize,
+            ..crate::chess_mamba_mcts::SearchConfig::default()
+        };
+        crate::chess_mamba_mcts::search(&self.model, &self.device, fen, &cfg)
     }
 }
 
