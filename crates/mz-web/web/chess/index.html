@@ -6,6 +6,10 @@
     <title>MuZero Chess</title>
     <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
     <link rel="stylesheet" href="../style.css" />
+    <!-- Lichess's own board engine, vendored verbatim -- see ./chessground/LICENSE.txt. -->
+    <link rel="stylesheet" href="./chessground/base.css" />
+    <link rel="stylesheet" href="./chessground/brown.css" />
+    <link rel="stylesheet" href="./chessground/cburnett.css" />
   </head>
   <body>
     <main>
@@ -31,7 +35,7 @@
         </div>
       </div>
 
-      <div class="board chess-board" id="board" aria-label="Chess board"></div>
+      <div class="cg-board-wrap" id="board" aria-label="Chess board"></div>
 
       <div class="promotion" id="promotion" hidden>
         <span>Promote to</span>
@@ -80,9 +84,9 @@
       </div>
 
       <p class="hint" id="hint">
-        Click a piece, then click a highlighted square to move it. Alpha-beta is a search over material and
-        piece-square tables; MuZero is the trained self-play agent; Bee-Mamba is a separate, searchless
-        Mamba/attention model that plays its policy head's top move directly.
+        Click or drag a piece to move it. Alpha-beta is a search over material and piece-square tables; MuZero is the
+        trained self-play agent; Bee-Mamba is a separate, searchless Mamba/attention model that plays its policy
+        head's top move directly.
       </p>
 
       <p class="eval" id="eval"></p>

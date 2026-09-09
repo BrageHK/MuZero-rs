@@ -524,107 +524,61 @@ main.landing header {
   }
 }
 
-/* Lichess's default "brown" board theme + its cburnett piece set. */
-.board.chess-board {
-  grid-template-columns: repeat(8, 1fr);
-  gap: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  border-radius: 3px;
-  overflow: hidden;
+/* The chess page's board is lichess's own chessground library (vendored
+   under ./chess/chessground/, see its LICENSE.txt) plus its "brown"
+   board / "cburnett" piece CSS -- this wrapper just gives chessground's
+   `.cg-wrap` element the concrete size it requires; chessground renders
+   everything inside it. */
+.cg-board-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  margin: 22px 0 0 18px;
   box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
 }
 
-.chess-board .cell.light {
-  background: #f0d9b5;
+/* Square highlight colors, ported from lichess's own board CSS
+   (lila's ui/lib/css/theme/board/_chessground.scss) so a move, capture,
+   check, or selection looks exactly like it does on lichess.org. */
+.cg-board-wrap square.move-dest {
+  background: radial-gradient(rgba(20, 85, 30, 0.5) 19%, rgba(0, 0, 0, 0) 20%);
 }
 
-.chess-board .cell.dark {
-  background: #b58863;
+.cg-board-wrap square.move-dest:hover {
+  background: rgba(20, 85, 30, 0.3);
 }
 
-/* Coordinate labels, drawn inside the board's edge squares exactly like
-   lichess: rank digits down the left column, file letters along the bottom
-   row, each colored as the *other* square shade for contrast. `main.js`
-   sets `data-rank`/`data-file` only on the relevant edge cells. */
-.chess-board .cell[data-rank]::before,
-.chess-board .cell[data-file]::after {
-  position: absolute;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  user-select: none;
-  pointer-events: none;
+.cg-board-wrap square.oc.move-dest {
+  background: radial-gradient(transparent 0%, transparent 79%, rgba(20, 85, 0, 0.3) 80%);
 }
 
-.chess-board .cell[data-rank]::before {
-  content: attr(data-rank);
-  top: 3px;
-  left: 4px;
+.cg-board-wrap square.last-move {
+  background-color: rgba(155, 199, 0, 0.41);
 }
 
-.chess-board .cell[data-file]::after {
-  content: attr(data-file);
-  bottom: 2px;
-  right: 4px;
+.cg-board-wrap square.selected {
+  background-color: rgba(20, 85, 30, 0.5);
 }
 
-.chess-board .cell.light[data-rank]::before,
-.chess-board .cell.light[data-file]::after {
-  color: #b58863;
-}
-
-.chess-board .cell.dark[data-rank]::before,
-.chess-board .cell.dark[data-file]::after {
-  color: #f0d9b5;
-}
-
-/* Quiet legal move: a small dot. Capture: a ring around the target square. */
-.chess-board .cell.legal::after {
-  width: 30%;
-  height: 30%;
-  background: rgba(20, 20, 20, 0.5);
-  opacity: 1;
-}
-
-.chess-board .cell.legal:hover::after {
-  opacity: 0.8;
-}
-
-.chess-board .cell.legal.capture::after {
-  width: 84%;
-  height: 84%;
-  background: transparent;
-  box-shadow: inset 0 0 0 4px rgba(20, 20, 20, 0.5);
-}
-
-.chess-board .cell.selected {
-  box-shadow: inset 0 0 0 1000px rgba(20, 90, 20, 0.5);
-}
-
-.chess-board .cell.last-move {
-  box-shadow: inset 0 0 0 1000px rgba(155, 199, 0, 0.41);
-}
-
-.chess-board .cell.check {
-  background-image: radial-gradient(
+.cg-board-wrap square.check {
+  background: radial-gradient(
     ellipse at center,
-    rgba(255, 0, 0, 0.9) 0%,
-    rgba(231, 0, 0, 0.75) 25%,
+    rgba(255, 0, 0, 1) 0%,
+    rgba(231, 0, 0, 1) 25%,
     rgba(169, 0, 0, 0) 89%,
-    rgba(169, 0, 0, 0) 100%
+    rgba(158, 0, 0, 0) 100%
   );
 }
 
-.cell .piece {
-  width: 86%;
-  height: 86%;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
-  user-select: none;
+.cg-board-wrap coords {
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.busy .cg-board-wrap {
+  cursor: progress;
 }
 
 .promotion {

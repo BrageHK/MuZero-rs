@@ -1,4 +1,5 @@
 import { Chess } from "https://cdn.jsdelivr.net/npm/chess.js@1.4.0/dist/esm/chess.js";
+import { Chessground } from "./chessground/chessground.js";
 
 const boardEl = document.getElementById("board");
 const statusEl = document.getElementById("status");
@@ -27,25 +28,21 @@ const botWarningEl = document.getElementById("bot-warning");
 // trained on up to 8 plies of history, so every committed move (human or
 // bot) is mirrored into the worker's copy via `play_uci` to keep that
 // history correct, not just handed the latest FEN.
+//
+// The board itself is lichess's own `chessground` (vendored under
+// ./chessground/, see its LICENSE.txt) -- it owns all rendering, dragging,
+// click-to-move, and highlighting; this file's job is just to keep it in
+// sync with chess.js via `syncBoard()`.
 let worker = null;
+let cg = null;
 let genId = 0;
 let pendingThink = null; // { genId, resolve } for the in-flight "think" request, if any
 
-const FILES = "abcdefgh";
-// Lichess's own cburnett SVG piece set, vendored under ./pieces (see
-// pieces/LICENSE.txt) -- filenames are `${color}${TYPE}.svg`, e.g. `wP.svg`.
-function pieceIconUrl(piece) {
-  return `./pieces/${piece.color}${piece.type.toUpperCase()}.svg`;
-}
-
 let chess = new Chess();
 let humanColor = "w";
-let whiteAtBottom = true;
 // Starts busy so clicks are inert until `main()` finishes loading the wasm
 // bot and runs the first `newGame()`, which clears it.
 let busy = true;
-let selected = null; // algebraic square with a piece currently selected
-let legalTargets = []; // verbose move objects for the selected piece
 let pendingPromotion = null; // { from, to } awaiting a piece choice
 let lastMove = null; // { from, to } of the most recently committed move, for the board highlight
 
@@ -53,77 +50,55 @@ function humanTurn() {
   return chess.turn() === humanColor;
 }
 
-// Maps a DOM cell's (row, col) — row 0 at the top of the board as displayed —
-// to the algebraic square shown there, accounting for board orientation.
-function squareAt(row, col) {
-  const file = whiteAtBottom ? FILES[col] : FILES[7 - col];
-  const rank = whiteAtBottom ? 8 - row : row + 1;
-  return `${file}${rank}`;
+function toColor(chessJsColor) {
+  return chessJsColor === "w" ? "white" : "black";
 }
 
-function squareColour(square) {
-  const file = square.charCodeAt(0) - 97;
-  const rank = Number(square[1]) - 1;
-  return (file + rank) % 2 === 0 ? "dark" : "light";
+// Whether the human can move right now -- gates both chessground's
+// `movable.dests` (below) and the status text.
+function clickable() {
+  return humanTurn() && !busy && !chess.isGameOver() && !pendingPromotion;
 }
 
-const cells = Array.from({ length: 64 }, (_, i) => {
-  const cell = document.createElement("button");
-  cell.className = "cell";
-  cell.addEventListener("click", () => onCellClick(i));
-  boardEl.appendChild(cell);
-  return cell;
-});
-
-function kingSquare(color) {
-  for (const row of chess.board()) {
-    for (const sq of row) {
-      if (sq && sq.type === "k" && sq.color === color) {
-        return sq.square;
-      }
+// chessground's `movable.dests` map: every square with a piece that can
+// move, to the list of squares it can legally move to. Built fresh from
+// chess.js before every `syncBoard()` so it's always exactly chess.js's own
+// legal moves -- chessground itself has no chess rules, it just offers
+// whatever destinations it's given.
+function toDests() {
+  const dests = new Map();
+  for (const move of chess.moves({ verbose: true })) {
+    const list = dests.get(move.from);
+    if (list) {
+      list.push(move.to);
+    } else {
+      dests.set(move.from, [move.to]);
     }
   }
-  return null;
+  return dests;
+}
+
+// Pushes the current chess.js position into chessground: piece placement,
+// whose turn it is, check/last-move highlights, and which squares are
+// draggable right now. Safe to call any time chess.js is the current
+// truth -- NOT while a promotion choice is pending, since chessground has
+// already moved the pawn optimistically and re-pushing the (unchanged)
+// pre-move fen would revert that move on screen.
+function syncBoard() {
+  cg.set({
+    fen: chess.fen(),
+    orientation: toColor(humanColor),
+    turnColor: toColor(chess.turn()),
+    check: chess.isCheck(),
+    lastMove: lastMove ? [lastMove.from, lastMove.to] : undefined,
+    movable: {
+      color: clickable() ? toColor(humanColor) : undefined,
+      dests: clickable() ? toDests() : new Map(),
+    },
+  });
 }
 
 function render() {
-  const inCheck = chess.isCheck();
-  const checkSquare = inCheck ? kingSquare(chess.turn()) : null;
-  const clickable = humanTurn() && !busy && !chess.isGameOver() && !pendingPromotion;
-  const legalSquares = new Set(legalTargets.map((m) => m.to));
-  const captureSquares = new Set(legalTargets.filter((m) => m.captured).map((m) => m.to));
-
-  cells.forEach((cell, i) => {
-    const row = Math.floor(i / 8);
-    const col = i % 8;
-    const square = squareAt(row, col);
-    const piece = chess.get(square);
-
-    cell.className = `cell ${squareColour(square)}`;
-    cell.classList.toggle("selected", square === selected);
-    cell.classList.toggle("legal", clickable && legalSquares.has(square));
-    cell.classList.toggle("capture", clickable && captureSquares.has(square));
-    cell.classList.toggle("check", square === checkSquare);
-    cell.classList.toggle("last-move", lastMove != null && (square === lastMove.from || square === lastMove.to));
-
-    // Coordinate labels (see style.css): rank digits on the leftmost
-    // column, file letters on the bottom row, regardless of orientation.
-    if (col === 0) {
-      cell.dataset.rank = square[1];
-    } else {
-      delete cell.dataset.rank;
-    }
-    if (row === 7) {
-      cell.dataset.file = square[0];
-    } else {
-      delete cell.dataset.file;
-    }
-
-    cell.innerHTML = piece
-      ? `<span class="piece" style="background-image: url('${pieceIconUrl(piece)}')" aria-label="${piece.color === "w" ? "white" : "black"} ${piece.type}"></span>`
-      : "";
-  });
-
   nameWhiteEl.textContent = humanColor === "w" ? "You" : "Bot";
   nameBlackEl.textContent = humanColor === "b" ? "You" : "Bot";
   sideWhiteEl.classList.toggle("active", chess.turn() === "w" && !chess.isGameOver());
@@ -142,25 +117,10 @@ function render() {
   } else if (busy) {
     statusEl.innerHTML = `<span class="spinner"></span> bot thinking…`;
   } else if (humanTurn()) {
-    statusEl.textContent = inCheck ? "your move — you're in check" : "your move";
+    statusEl.textContent = chess.isCheck() ? "your move — you're in check" : "your move";
   } else {
     statusEl.textContent = "bot to move";
   }
-}
-
-function selectSquare(square) {
-  const piece = chess.get(square);
-  if (!piece || piece.color !== humanColor) {
-    return;
-  }
-  selected = square;
-  legalTargets = chess.moves({ square, verbose: true });
-  render();
-}
-
-function clearSelection() {
-  selected = null;
-  legalTargets = [];
 }
 
 // The UCI form of a chess.js verbose move object, e.g. `e2e4`, `e7e8q`.
@@ -175,53 +135,30 @@ function mirrorMove(move) {
   worker.postMessage({ type: "mirrorMove", uci: moveToUci(move) });
 }
 
-async function attemptMove(from, to) {
-  const candidates = legalTargets.filter((m) => m.to === to);
-  if (candidates.length === 0) {
-    return;
-  }
+// chessground's `movable.events.after` callback: fires once a human
+// drag/click move lands on a legal destination (`dests`, built from chess.js,
+// is the only thing constraining which moves chessground will even offer).
+async function onUserMove(orig, dest) {
+  const candidates = chess.moves({ verbose: true }).filter((m) => m.from === orig && m.to === dest);
   if (candidates.length > 1) {
     // Multiple candidates for the same from/to only happens on promotion,
     // where chess.js expands one move into one entry per promotion piece.
-    pendingPromotion = { from, to };
-    clearSelection();
+    // chessground has already moved the pawn on screen; leave chess.js and
+    // the board alone (beyond locking further input) until the piece choice
+    // comes in below.
+    pendingPromotion = { from: orig, to: dest };
+    cg.set({ movable: { color: undefined, dests: new Map() } });
     render();
     return;
   }
   const move = chess.move(candidates[0]);
   mirrorMove(move);
   lastMove = { from: move.from, to: move.to };
-  clearSelection();
   evalEl.textContent = "";
   setBotWarning(null);
+  syncBoard();
   render();
   await settle();
-}
-
-async function onCellClick(i) {
-  if (busy || chess.isGameOver() || pendingPromotion) {
-    return;
-  }
-  const row = Math.floor(i / 8);
-  const col = i % 8;
-  const square = squareAt(row, col);
-
-  if (!humanTurn()) {
-    return;
-  }
-
-  if (selected === square) {
-    clearSelection();
-    render();
-    return;
-  }
-
-  if (selected && legalTargets.some((m) => m.to === square)) {
-    await attemptMove(selected, square);
-    return;
-  }
-
-  selectSquare(square);
 }
 
 promotionEl.querySelectorAll("button").forEach((button) => {
@@ -236,6 +173,7 @@ promotionEl.querySelectorAll("button").forEach((button) => {
     lastMove = { from: move.from, to: move.to };
     evalEl.textContent = "";
     setBotWarning(null);
+    syncBoard();
     render();
     await settle();
   });
@@ -251,8 +189,7 @@ function delay(ms) {
 }
 
 // Parses a `e2e4` / `e7e8q` UCI-style string into one of chess.js's own
-// verbose move objects, so it's applied the exact same way a human's
-// click-to-move is.
+// verbose move objects, so it's applied the exact same way a human's move is.
 function uciToMove(uci) {
   if (uci == null) {
     return null;
@@ -326,6 +263,7 @@ async function botTurn() {
     evalEl.textContent = result.value == null ? `bot played ${move.san}` : `bot played ${move.san} (value ${result.value.toFixed(2)})`;
   }
   setBotWarning(warning);
+  syncBoard();
   render();
   await settle();
 }
@@ -345,13 +283,12 @@ async function newGame() {
   chess = new Chess();
   worker.postMessage({ type: "reset" });
   humanColor = colourEl.value === "white" ? "w" : "b";
-  whiteAtBottom = humanColor === "w";
-  clearSelection();
   pendingPromotion = null;
   lastMove = null;
   busy = false;
   evalEl.textContent = "";
   setBotWarning(null);
+  syncBoard();
   render();
   await settle();
 }
@@ -390,6 +327,20 @@ async function main() {
   worker.postMessage({ type: "setSims", sims: Number(simsEl.value) });
   simsEl.addEventListener("change", () => worker.postMessage({ type: "setSims", sims: Number(simsEl.value) }));
   backendEl.textContent = "alpha-beta search or the trained MuZero agent, both via WASM";
+
+  cg = Chessground(boardEl, {
+    orientation: toColor(humanColor),
+    coordinates: true,
+    disableContextMenu: true,
+    movable: {
+      free: false,
+      events: { after: (orig, dest) => onUserMove(orig, dest) },
+    },
+    premovable: { enabled: false },
+    predroppable: { enabled: false },
+    highlight: { lastMove: true, check: true },
+  });
+
   await newGame();
 }
 
