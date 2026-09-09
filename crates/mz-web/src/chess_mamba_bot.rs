@@ -17,7 +17,7 @@
 use core::str::FromStr;
 
 use burn::prelude::*;
-use chess::{ALL_SQUARES, Board, Color, MoveGen, Piece};
+use chess::{ALL_SQUARES, Board, ChessMove, Color, MoveGen, Piece};
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -69,13 +69,22 @@ fn encode_fen(fen: &str, board: &Board) -> [f32; 64 * IN_DIM] {
     planes
 }
 
-/// The bot's move for the position given as FEN, in UCI notation (`e2e4`,
-/// `e7e8q`). `None` if the FEN is malformed or the position has no legal move.
-fn best_move_uci(model: &model::chess_mamba::Model<Be>, device: &model::Device, fen: &str) -> Option<String> {
-    let board = Board::from_str(fen).ok()?;
+/// Every legal move for the position given as FEN, ranked best-first by the
+/// policy head, in UCI notation (`e2e4`, `e7e8q`). Empty if the FEN is
+/// malformed or the position has no legal move.
+///
+/// Exposed as a ranked list (rather than just the top move) so callers can
+/// fall back to the next-best candidate if the top one is ever rejected --
+/// e.g. by chess.js's stricter FEN/legality checks disagreeing at the
+/// margins with this crate's `chess` -- instead of the bot silently failing
+/// to move.
+fn ranked_moves_uci(model: &model::chess_mamba::Model<Be>, device: &model::Device, fen: &str) -> Vec<String> {
+    let Some(board) = Board::from_str(fen).ok() else {
+        return Vec::new();
+    };
     let legal_moves: Vec<_> = MoveGen::new_legal(&board).collect();
     if legal_moves.is_empty() {
-        return None;
+        return Vec::new();
     }
 
     let planes = encode_fen(fen, &board);
@@ -83,24 +92,27 @@ fn best_move_uci(model: &model::chess_mamba::Model<Be>, device: &model::Device, 
     let (policy_logits, _value_logits) = model.forward(input);
     let policy: Vec<f32> = policy_logits.into_data().to_vec().expect("policy_logits is f32");
 
-    let mut best_move = None;
-    let mut best_score = f32::NEG_INFINITY;
-    for mv in legal_moves {
+    let mut scored: Vec<(f32, ChessMove)> = legal_moves
+        .into_iter()
         // `FromToPolicyHead` only scores (from, to) square pairs, so it
         // can't tell a queen promotion apart from an underpromotion to the
         // same square -- prune underpromotions, same as play.py's
         // `choose_move`. Queen is virtually always the right choice anyway.
-        if mv.get_promotion().is_some_and(|p| p != Piece::Queen) {
-            continue;
-        }
-        let index = mv.get_source().to_index() * 64 + mv.get_dest().to_index();
-        let score = policy[index];
-        if score > best_score {
-            best_score = score;
-            best_move = Some(mv);
-        }
-    }
-    best_move.map(|mv| mv.to_string())
+        .filter(|mv| !mv.get_promotion().is_some_and(|p| p != Piece::Queen))
+        .map(|mv| {
+            let index = mv.get_source().to_index() * 64 + mv.get_dest().to_index();
+            (policy[index], mv)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    scored.into_iter().map(|(_, mv)| mv.to_string()).collect()
+}
+
+/// The bot's top move for the position given as FEN, in UCI notation
+/// (`e2e4`, `e7e8q`). `None` if the FEN is malformed or the position has no
+/// legal move.
+fn best_move_uci(model: &model::chess_mamba::Model<Be>, device: &model::Device, fen: &str) -> Option<String> {
+    ranked_moves_uci(model, device, fen).into_iter().next()
 }
 
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
@@ -124,6 +136,14 @@ impl ChessMambaBot {
     /// `worker.js`, only the worker's own thread stalls while it computes).
     pub fn best_move(&self, fen: &str) -> Option<String> {
         best_move_uci(&self.model, &self.device, fen)
+    }
+
+    /// All legal moves ranked best-first by the policy head. `worker.js`
+    /// uses this to fall back to the next-best candidate whenever
+    /// `best_move`'s top pick turns out illegal by the page's own chess.js
+    /// state, instead of leaving the game stuck.
+    pub fn ranked_moves(&self, fen: &str) -> Vec<String> {
+        ranked_moves_uci(&self.model, &self.device, fen)
     }
 }
 
@@ -151,6 +171,24 @@ mod tests {
             bot()
                 .best_move("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn ranked_moves_lists_every_legal_move_with_the_top_pick_first() {
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let ranked = bot().ranked_moves(fen);
+        assert_eq!(ranked.first().cloned(), bot().best_move(fen));
+        // Start position: 16 pawn/knight moves, no promotions to prune.
+        assert_eq!(ranked.len(), 20);
+    }
+
+    #[test]
+    fn ranked_moves_empty_when_game_is_already_over() {
+        assert!(
+            bot()
+                .ranked_moves("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3")
+                .is_empty()
         );
     }
 }

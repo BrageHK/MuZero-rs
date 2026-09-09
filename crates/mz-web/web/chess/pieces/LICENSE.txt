@@ -1,0 +1,7 @@
+Chess piece set: cburnett
+Author: Colin M.L. Burnett
+Source: https://github.com/lichess-org/lila/tree/master/public/piece/cburnett
+License: GPLv2 / CC-BY-SA 3.0 (dual-licensed by the author; see
+https://en.wikipedia.org/wiki/User:Cburnett/GFDL_images)
+
+Vendored unmodified for local, offline rendering of the chess board.

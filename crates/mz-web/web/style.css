@@ -363,6 +363,20 @@ label[hidden] {
   font-variant-numeric: tabular-nums;
 }
 
+.bot-warning {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid #a73333;
+  border-radius: 4px;
+  background: rgba(167, 51, 51, 0.12);
+  color: #f06a6a;
+  font-size: 13px;
+}
+
+.bot-warning[hidden] {
+  display: none;
+}
+
 .busy .cell.legal {
   cursor: progress;
 }
@@ -510,48 +524,107 @@ main.landing header {
   }
 }
 
+/* Lichess's default "brown" board theme + its cburnett piece set. */
 .board.chess-board {
   grid-template-columns: repeat(8, 1fr);
+  gap: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
 }
 
-.cell.light {
-  background: #2a2d31;
+.chess-board .cell.light {
+  background: #f0d9b5;
 }
 
-.cell.dark {
-  background: var(--panel);
+.chess-board .cell.dark {
+  background: #b58863;
 }
 
-.cell.selected {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+/* Coordinate labels, drawn inside the board's edge squares exactly like
+   lichess: rank digits down the left column, file letters along the bottom
+   row, each colored as the *other* square shade for contrast. `main.js`
+   sets `data-rank`/`data-file` only on the relevant edge cells. */
+.chess-board .cell[data-rank]::before,
+.chess-board .cell[data-file]::after {
+  position: absolute;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
 }
 
-.cell.check {
-  outline: 2px solid #c23e3e;
-  outline-offset: -2px;
+.chess-board .cell[data-rank]::before {
+  content: attr(data-rank);
+  top: 3px;
+  left: 4px;
+}
+
+.chess-board .cell[data-file]::after {
+  content: attr(data-file);
+  bottom: 2px;
+  right: 4px;
+}
+
+.chess-board .cell.light[data-rank]::before,
+.chess-board .cell.light[data-file]::after {
+  color: #b58863;
+}
+
+.chess-board .cell.dark[data-rank]::before,
+.chess-board .cell.dark[data-file]::after {
+  color: #f0d9b5;
+}
+
+/* Quiet legal move: a small dot. Capture: a ring around the target square. */
+.chess-board .cell.legal::after {
+  width: 30%;
+  height: 30%;
+  background: rgba(20, 20, 20, 0.5);
+  opacity: 1;
+}
+
+.chess-board .cell.legal:hover::after {
+  opacity: 0.8;
+}
+
+.chess-board .cell.legal.capture::after {
+  width: 84%;
+  height: 84%;
+  background: transparent;
+  box-shadow: inset 0 0 0 4px rgba(20, 20, 20, 0.5);
+}
+
+.chess-board .cell.selected {
+  box-shadow: inset 0 0 0 1000px rgba(20, 90, 20, 0.5);
+}
+
+.chess-board .cell.last-move {
+  box-shadow: inset 0 0 0 1000px rgba(155, 199, 0, 0.41);
+}
+
+.chess-board .cell.check {
+  background-image: radial-gradient(
+    ellipse at center,
+    rgba(255, 0, 0, 0.9) 0%,
+    rgba(231, 0, 0, 0.75) 25%,
+    rgba(169, 0, 0, 0) 89%,
+    rgba(169, 0, 0, 0) 100%
+  );
 }
 
 .cell .piece {
-  font-size: min(6.2vw, 40px);
-  line-height: 1;
+  width: 86%;
+  height: 86%;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
   user-select: none;
-}
-
-.cell .piece.n {
-  font-size: min(7vw, 45px);
-}
-
-.cell .piece.white {
-  color: #f0f0f2;
-  text-shadow: 0 0 1px #000, 0 0 1px #000;
-}
-
-.cell .piece.black {
-  color: #0a0a0b;
-  text-shadow:
-    0 0 1px #9a9ea6,
-    0 0 1px #9a9ea6;
 }
 
 .promotion {

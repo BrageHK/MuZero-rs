@@ -16,6 +16,7 @@ const strengthEl = document.getElementById("strength");
 const simsLabelEl = document.getElementById("sims-label");
 const simsEl = document.getElementById("sims");
 const promotionEl = document.getElementById("promotion");
+const botWarningEl = document.getElementById("bot-warning");
 
 // The board state of record lives here in chess.js. Both bots run in
 // `worker.js`, off the main thread, so a slow Alpha-Beta search or a long
@@ -31,17 +32,11 @@ let genId = 0;
 let pendingThink = null; // { genId, resolve } for the in-flight "think" request, if any
 
 const FILES = "abcdefgh";
-// Both colors use the same (filled) glyph shapes and are told apart purely by
-// CSS color — the outline "white" chess codepoints (U+2654-2659) render
-// solid/filled in several common Linux fonts (DejaVu, Noto Sans Symbols),
-// which made white pieces look black. Each glyph also carries the U+FE0E
-// text-presentation selector so mobile browsers don't hand them to a color
-// emoji font instead — that font draws fixed dark artwork that ignores our
-// CSS `color`, which made white pieces look black again on mobile.
-const GLYPH = {
-  w: { p: "♟︎", n: "♞︎", b: "♝︎", r: "♜︎", q: "♛︎", k: "♚︎" },
-  b: { p: "♟︎", n: "♞︎", b: "♝︎", r: "♜︎", q: "♛︎", k: "♚︎" },
-};
+// Lichess's own cburnett SVG piece set, vendored under ./pieces (see
+// pieces/LICENSE.txt) -- filenames are `${color}${TYPE}.svg`, e.g. `wP.svg`.
+function pieceIconUrl(piece) {
+  return `./pieces/${piece.color}${piece.type.toUpperCase()}.svg`;
+}
 
 let chess = new Chess();
 let humanColor = "w";
@@ -52,6 +47,7 @@ let busy = true;
 let selected = null; // algebraic square with a piece currently selected
 let legalTargets = []; // verbose move objects for the selected piece
 let pendingPromotion = null; // { from, to } awaiting a piece choice
+let lastMove = null; // { from, to } of the most recently committed move, for the board highlight
 
 function humanTurn() {
   return chess.turn() === humanColor;
@@ -95,6 +91,7 @@ function render() {
   const checkSquare = inCheck ? kingSquare(chess.turn()) : null;
   const clickable = humanTurn() && !busy && !chess.isGameOver() && !pendingPromotion;
   const legalSquares = new Set(legalTargets.map((m) => m.to));
+  const captureSquares = new Set(legalTargets.filter((m) => m.captured).map((m) => m.to));
 
   cells.forEach((cell, i) => {
     const row = Math.floor(i / 8);
@@ -105,9 +102,26 @@ function render() {
     cell.className = `cell ${squareColour(square)}`;
     cell.classList.toggle("selected", square === selected);
     cell.classList.toggle("legal", clickable && legalSquares.has(square));
+    cell.classList.toggle("capture", clickable && captureSquares.has(square));
     cell.classList.toggle("check", square === checkSquare);
+    cell.classList.toggle("last-move", lastMove != null && (square === lastMove.from || square === lastMove.to));
 
-    cell.innerHTML = piece ? `<span class="piece ${piece.color === "w" ? "white" : "black"} ${piece.type}">${GLYPH[piece.color][piece.type]}</span>` : "";
+    // Coordinate labels (see style.css): rank digits on the leftmost
+    // column, file letters on the bottom row, regardless of orientation.
+    if (col === 0) {
+      cell.dataset.rank = square[1];
+    } else {
+      delete cell.dataset.rank;
+    }
+    if (row === 7) {
+      cell.dataset.file = square[0];
+    } else {
+      delete cell.dataset.file;
+    }
+
+    cell.innerHTML = piece
+      ? `<span class="piece" style="background-image: url('${pieceIconUrl(piece)}')" aria-label="${piece.color === "w" ? "white" : "black"} ${piece.type}"></span>`
+      : "";
   });
 
   nameWhiteEl.textContent = humanColor === "w" ? "You" : "Bot";
@@ -176,8 +190,10 @@ async function attemptMove(from, to) {
   }
   const move = chess.move(candidates[0]);
   mirrorMove(move);
+  lastMove = { from: move.from, to: move.to };
   clearSelection();
   evalEl.textContent = "";
+  setBotWarning(null);
   render();
   await settle();
 }
@@ -217,11 +233,18 @@ promotionEl.querySelectorAll("button").forEach((button) => {
     pendingPromotion = null;
     const move = chess.move({ from, to, promotion: button.dataset.piece });
     mirrorMove(move);
+    lastMove = { from: move.from, to: move.to };
     evalEl.textContent = "";
+    setBotWarning(null);
     render();
     await settle();
   });
 });
+
+function setBotWarning(message) {
+  botWarningEl.textContent = message ?? "";
+  botWarningEl.hidden = message == null;
+}
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -263,6 +286,29 @@ function requestThink(id) {
 // just flash onto the board.
 const MIN_THINK_MS = 400;
 
+// Picks a legal move out of the bot's reply, falling back to progressively
+// later candidates -- and finally a random legal move -- if the top pick(s)
+// turn out illegal per chess.js's own legality check. `result.moves` is only
+// populated for bee-mamba (a searchless policy-head argmax that can, at the
+// margins, disagree with chess.js on what's legal in a position); alpha-beta
+// and MuZero keep their original single-uci, no-fallback behavior.
+function pickBotMove(result) {
+  const candidates = result.moves ?? (result.uci != null ? [result.uci] : []);
+  for (const uci of candidates) {
+    const move = uciToMove(uci);
+    if (move) {
+      const warning = uci === candidates[0] ? null : `bee-mamba's top move (${candidates[0]}) was illegal — played its next-best legal move (${uci}) instead.`;
+      return { move, warning };
+    }
+  }
+  if (result.moves == null) {
+    return { move: null, warning: null };
+  }
+  const legal = chess.moves({ verbose: true });
+  const move = legal[Math.floor(Math.random() * legal.length)];
+  return { move, warning: `bee-mamba had no legal move among its candidates — played a random legal move (${move.san}) instead.` };
+}
+
 async function botTurn() {
   busy = true;
   render();
@@ -272,12 +318,14 @@ async function botTurn() {
     return;
   }
   busy = false;
-  const move = uciToMove(result.uci);
+  const { move, warning } = pickBotMove(result);
   if (move) {
     chess.move(move);
     mirrorMove(move);
+    lastMove = { from: move.from, to: move.to };
     evalEl.textContent = result.value == null ? `bot played ${move.san}` : `bot played ${move.san} (value ${result.value.toFixed(2)})`;
   }
+  setBotWarning(warning);
   render();
   await settle();
 }
@@ -300,8 +348,10 @@ async function newGame() {
   whiteAtBottom = humanColor === "w";
   clearSelection();
   pendingPromotion = null;
+  lastMove = null;
   busy = false;
   evalEl.textContent = "";
+  setBotWarning(null);
   render();
   await settle();
 }
