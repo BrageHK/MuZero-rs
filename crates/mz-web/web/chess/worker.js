@@ -33,8 +33,12 @@ onmessage = async (event) => {
       } else if (engine === "bee-mamba") {
         // Synchronous: one forward pass, no search, no history (ChessMamba
         // was trained with no history planes) -- just the current FEN in.
-        const uci = chessMambaBot.best_move(fen) ?? null;
-        postMessage({ type: "thought", genId, uci, value: null });
+        // Sent as a full ranked list (not just the top move) so the main
+        // thread can fall back to the next-best candidate if the top one
+        // ever turns out illegal per chess.js's own state (see main.js's
+        // `botTurn`).
+        const moves = chessMambaBot.ranked_moves(fen);
+        postMessage({ type: "thought", genId, uci: moves[0] ?? null, moves, value: null });
       } else {
         // Synchronous alpha-beta: this call blocks the worker thread for its
         // full duration, but never the main thread — the page stays responsive.
