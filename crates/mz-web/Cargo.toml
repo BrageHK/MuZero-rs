@@ -19,6 +19,13 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
+# examples/bench_mcts.rs only, to pin libtorch's own intra-op thread pool to
+# 1 when it's being called from many outer (tree-parallel) threads at once --
+# see that example for why. Optional + gated by the `tch` feature (not a
+# plain dev-dependency: Cargo doesn't allow optional dev-dependencies, and an
+# unconditional one would force every example/test build, even ndarray-only
+# ones, to resolve a libtorch install).
+tch = { version = "0.22", optional = true }
 
 # burn pulls `rand`, whose entropy source has no default backend on
 # wasm32-unknown-unknown; the browser one is behind this feature.
@@ -34,9 +41,16 @@ burn-onnx = { workspace = true }
 [dev-dependencies]
 mz-train = { path = "../mz-train", default-features = false, features = ["ndarray"] }
 fastrand = "2.4.1"
+# examples/uci_chess_mamba_mcts.rs only: create_chess_mamba() is async only
+# for wasm-bindgen's calling convention (init_backend is a no-op on every
+# native backend), so a single manual poll -- no real runtime -- is enough.
+pollster = "0.4"
 
 [features]
 default = ["flex"]
 flex = ["burn/flex", "mz-core/flex"]
-# Native tests only.
+# Native tests/benchmarks only -- none of these build for wasm32.
 ndarray = ["burn/ndarray", "mz-core/ndarray"]
+tch = ["burn/tch", "mz-core/tch", "dep:tch"]
+metal = ["burn/metal", "burn/fusion", "mz-core/metal"]
+vulkan = ["burn/vulkan", "burn/fusion", "mz-core/vulkan"]

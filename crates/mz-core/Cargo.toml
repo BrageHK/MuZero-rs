@@ -15,6 +15,7 @@ chess = "3.2.0"
 # Backends are opt-in; mz-train and mz-web each pick their own.
 default = []
 ndarray = ["burn/ndarray"]
+tch = ["burn/tch"]
 flex = ["burn/flex"]
 wgpu = ["burn/wgpu", "burn/fusion"]
 webgpu = ["burn/webgpu"]
