@@ -1,18 +1,17 @@
-//! Benchmarks `chess_mamba_mcts::search_with_stats` across thread counts and
-//! virtual-loss on/off -- the Rust counterpart to bee-chess's
-//! `bench_mcts.py` (same 400-simulation budget, same metric: nodes/sec and
-//! the leaf-collision rate, i.e. how often two threads redundantly
-//! NN-evaluate the identical position).
+//! Same benchmark as `bench_mcts.rs`, but forces `LibTorchDevice::Cuda(0)`
+//! -- the tch/libtorch backend's ROCm GPU handle (ROCm-built libtorch
+//! reuses torch's CUDA API surface, same as the Python side; see
+//! bee-chess's `play_mcts.py::default_device`) -- instead of
+//! `model::Device::default()`, which is CPU-only for this backend.
 //!
-//! Run with:
-//!   cargo run --release -p mz-web --example bench_mcts \
-//!       --features ndarray --no-default-features
-//! (the `ndarray` backend, not the default `flex`/wgpu one, since this is a
-//! plain CLI binary with no async GPU-init dance to do -- see
-//! `chess_mamba_bot.rs`'s tests for the same choice.)
+//! Run with (needs LIBTORCH_USE_PYTORCH=1 pointed at a torch==2.9.0 ROCm
+//! build; tch 0.22 pins that exact version):
+//!   cargo run --release -p mz-web --example bench_mcts_tch_gpu \
+//!       --features tch --no-default-features
 
 use std::time::Instant;
 
+use burn::backend::libtorch::LibTorchDevice;
 use mz_web::chess_mamba_mcts::{SearchConfig, search_with_stats};
 use mz_web::model::{self, Be};
 
@@ -62,19 +61,9 @@ fn bench(model: &model::chess_mamba::Model<Be>, device: &model::Device, threads:
 }
 
 fn main() {
-    // libtorch defaults to its own intra-op thread pool spanning every CPU
-    // core for *each* forward call. That's fine with 1 outer thread, but
-    // once our own tree-parallel search also runs N worker threads, every
-    // one of them fights over the same cores via libtorch's internal pool
-    // too -- N outer threads x libtorch's own ~N-wide inner pool massively
-    // oversubscribes the machine, which is exactly why the earlier tch
-    // benchmark capped out around 4 threads and got *worse* past 8. Pinning
-    // libtorch to 1 thread per call moves all the parallelism to our outer
-    // threads instead, where it belongs.
-    #[cfg(feature = "tch")]
     tch::set_num_threads(1);
 
-    let device = model::Device::default();
+    let device = LibTorchDevice::Cuda(0);
     let model = model::chess_mamba::Model::from_embedded(&device);
 
     let configs: &[(usize, f32)] =

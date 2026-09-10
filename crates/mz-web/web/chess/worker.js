@@ -26,18 +26,27 @@ onmessage = async (event) => {
       break;
     }
     case "think": {
-      const { genId, engine, fen, depth, seed } = msg;
+      const { genId, engine, fen, depth, mambaSims, seed } = msg;
       if (engine === "muzero") {
         const result = await chessGame.think(seed);
         postMessage({ type: "thought", genId, uci: result.uci || null, value: result.value });
+      } else if (engine === "bee-mamba" && mambaSims > 0) {
+        // Value-guided PUCT search (chess_mamba_mcts) on top of the same
+        // policy/value heads, instead of just argmaxing the policy head.
+        // Sequential on wasm regardless of thread count (see that module's
+        // docstring), so 1 thread is passed.
+        const t0 = performance.now();
+        const uci = (await chessMambaBot.best_move_mcts(fen, mambaSims, 1)) ?? null;
+        const dtS = (performance.now() - t0) / 1000;
+        console.log(`[bee-mamba mcts] ${mambaSims} sims in ${dtS.toFixed(3)}s -> ${(mambaSims / dtS).toFixed(1)} nodes/s`);
+        postMessage({ type: "thought", genId, uci, moves: null, value: null });
       } else if (engine === "bee-mamba") {
-        // Synchronous: one forward pass, no search, no history (ChessMamba
-        // was trained with no history planes) -- just the current FEN in.
-        // Sent as a full ranked list (not just the top move) so the main
-        // thread can fall back to the next-best candidate if the top one
-        // ever turns out illegal per chess.js's own state (see main.js's
-        // `botTurn`).
-        const moves = chessMambaBot.ranked_moves(fen);
+        // One forward pass, no search, no history (ChessMamba was trained
+        // with no history planes) -- just the current FEN in. Sent as a full
+        // ranked list (not just the top move) so the main thread can fall
+        // back to the next-best candidate if the top one ever turns out
+        // illegal per chess.js's own state (see main.js's `botTurn`).
+        const moves = await chessMambaBot.ranked_moves(fen);
         postMessage({ type: "thought", genId, uci: moves[0] ?? null, moves, value: null });
       } else {
         // Synchronous alpha-beta: this call blocks the worker thread for its

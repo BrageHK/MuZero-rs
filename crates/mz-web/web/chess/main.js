@@ -16,6 +16,8 @@ const strengthLabelEl = document.getElementById("strength-label");
 const strengthEl = document.getElementById("strength");
 const simsLabelEl = document.getElementById("sims-label");
 const simsEl = document.getElementById("sims");
+const mambaSimsLabelEl = document.getElementById("mamba-sims-label");
+const mambaSimsEl = document.getElementById("mamba-sims");
 const promotionEl = document.getElementById("promotion");
 const botWarningEl = document.getElementById("bot-warning");
 
@@ -213,6 +215,7 @@ function requestThink(id) {
       engine: engineEl.value,
       fen: chess.fen(),
       depth: Number(strengthEl.value),
+      mambaSims: Number(mambaSimsEl.value),
       seed,
     });
   });
@@ -299,12 +302,12 @@ newGameEl.addEventListener("click", () => {
   }
 });
 colourEl.addEventListener("change", () => newGame());
-engineEl.addEventListener("change", () => {
-  // Bee-Mamba is a single forward pass -- no depth (alpha-beta) or
-  // simulation count (MuZero) to tune, so both stay hidden for it.
+function syncEngineControls() {
   strengthLabelEl.hidden = engineEl.value !== "alphabeta";
   simsLabelEl.hidden = engineEl.value !== "muzero";
-});
+  mambaSimsLabelEl.hidden = engineEl.value !== "bee-mamba";
+}
+engineEl.addEventListener("change", syncEngineControls);
 
 async function main() {
   backendEl.textContent = "loading MuZero weights…";
@@ -326,7 +329,8 @@ async function main() {
   };
   worker.postMessage({ type: "setSims", sims: Number(simsEl.value) });
   simsEl.addEventListener("change", () => worker.postMessage({ type: "setSims", sims: Number(simsEl.value) }));
-  backendEl.textContent = "alpha-beta search or the trained MuZero agent, both via WASM";
+  syncEngineControls();
+  backendEl.textContent = "alpha-beta search on CPU, or the MuZero/ChessMamba agents via WebGPU";
 
   cg = Chessground(boardEl, {
     orientation: toColor(humanColor),

@@ -2,6 +2,8 @@ pub mod chess_bot;
 pub mod chess_game;
 pub mod chess_mamba_bot;
 pub mod chess_mamba_mcts;
+#[cfg(feature = "tch")]
+pub mod chess_mamba_mcts_batched;
 pub mod model;
 pub mod opponent;
 pub mod rng;
@@ -10,7 +12,7 @@ pub mod search;
 use mz_core::othello::{Othello, PASS};
 
 use crate::model::othello::{Net, SEARCH};
-use crate::model::{Be, Device};
+use crate::model::{CpuBe as Be, CpuDevice as Device};
 use crate::opponent::Opponent;
 use crate::rng::Rng;
 use crate::search::gumbel_search;
@@ -44,11 +46,11 @@ pub struct Game {
 // interior-mutable from the JS side: search never mutates the game.
 impl core::panic::RefUnwindSafe for Game {}
 
-/// Builds the agent: sets up the backend and loads the embedded weights.
+/// Builds the agent: loads the embedded weights. `CpuBe`'s CPU device needs
+/// no async setup, unlike chess's WebGPU `Be` (see `model::init_backend`).
 #[cfg_attr(target_family = "wasm", wasm_bindgen::prelude::wasm_bindgen)]
 pub async fn create(simulations: u32) -> Game {
     let device = Device::default();
-    model::init_backend(&device).await;
     Game {
         env: Othello::new(),
         net: model::othello::load(&device),

@@ -20,11 +20,13 @@
 //!   - WASM has no `std::thread` here (no SharedArrayBuffer/COOP+COEP wiring
 //!     in this project), so `search` always takes the sequential path
 //!     regardless of `threads` on that target -- same PUCT/FPU math, one
-//!     leaf at a time. `Be` (the "flex" backend) is wgpu/WebGPU-backed on
-//!     both targets, so GPU-accelerated single-leaf inference works either
-//!     way; batching multiple leaves into one GPU call isn't possible with
-//!     the committed model's static batch=1 shape regardless of platform --
-//!     see mcts_lc0.py's own docstring for the same limitation.
+//!     leaf at a time. `Be` (model/mod.rs's feature-selected backend,
+//!     WebGPU by default) is WebGPU/wgpu-backed on both targets, so
+//!     GPU-accelerated single-leaf inference works either way; batching
+//!     multiple leaves into one GPU call isn't possible with the committed
+//!     model's static batch=1 shape regardless of platform -- see
+//!     mcts_lc0.py's own docstring for the same limitation, and
+//!     `chess_mamba_mcts_batched.rs` for the dynamic-batch alternative.
 //!
 //! Deadlock safety net: unlike the Python version, there's no portable
 //! "dump every thread's stack" facility in std Rust, so the watchdog here is
@@ -44,6 +46,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use burn::prelude::*;
+use burn::tensor::Transaction;
 use chess::{Board, BoardStatus, ChessMove, MoveGen, Piece};
 
 use crate::chess_mamba_bot::{IN_DIM, encode_board};
@@ -146,7 +149,7 @@ fn advance_halfmove_clock(board: &Board, mv: ChessMove, prev: u32) -> u32 {
 /// `chess_mamba_bot`'s plain player, since the from/to head can't tell them
 /// apart from the queen promotion to the same square -- and a value in
 /// [-1, 1] from the perspective of the side to move at `board`).
-fn evaluate(
+async fn evaluate(
     model: &model::chess_mamba::Model<Be>,
     device: &model::Device,
     board: &Board,
@@ -162,8 +165,16 @@ fn evaluate(
     let planes = encode_board(board, halfmove_clock as f32);
     let input: Tensor<Be, 3> = Tensor::<Be, 1>::from_floats(planes.as_slice(), device).reshape([1, 64, IN_DIM]);
     let (policy_logits, value_logits) = model.forward(input);
-    let policy: Vec<f32> = policy_logits.into_data().to_vec().expect("policy_logits is f32");
-    let mut value_probs: Vec<f32> = value_logits.into_data().to_vec().expect("value_logits is f32");
+    let [policy_data, value_data] = Transaction::default()
+        .register(policy_logits)
+        .register(value_logits)
+        .execute_async()
+        .await
+        .expect("chess_mamba evaluate readback")
+        .try_into()
+        .expect("exactly two tensors");
+    let policy: Vec<f32> = policy_data.into_vec().expect("policy_logits is f32");
+    let mut value_probs: Vec<f32> = value_data.into_vec().expect("value_logits is f32");
 
     let mut scores: Vec<f32> =
         legal_moves.iter().map(|mv| policy[mv.get_source().to_index() * 64 + mv.get_dest().to_index()]).collect();
@@ -290,7 +301,7 @@ fn expand(tree: &mut Tree, leaf_idx: usize, priors: Vec<(ChessMove, f32)>) {
 /// (terminal check first -- no NN call needed there), expand + back up.
 /// `lock` is reacquired for the (cheap) tree mutation before and after the
 /// (expensive, lock-free) leaf evaluation.
-fn run_one_simulation(
+async fn run_one_simulation(
     lock: &Mutex<Tree>,
     model: &model::chess_mamba::Model<Be>,
     device: &model::Device,
@@ -308,7 +319,7 @@ fn run_one_simulation(
         let value = if leaf_board.status() == BoardStatus::Checkmate { -1.0 } else { 0.0 };
         (Vec::new(), value)
     } else {
-        evaluate(model, device, &leaf_board, leaf_clock)
+        evaluate(model, device, &leaf_board, leaf_clock).await
     };
 
     let mut tree = lock.lock().expect("mcts tree lock poisoned");
@@ -324,14 +335,14 @@ fn best_move_by_visits(tree: &Tree) -> Option<ChessMove> {
 /// (always) and natively whenever `cfg.threads <= 1`. Returns (best move,
 /// collision count -- see `Tree::collisions`; always 0 here since there's
 /// only ever one in-flight simulation).
-fn search_sequential(
+async fn search_sequential(
     model: &model::chess_mamba::Model<Be>,
     device: &model::Device,
     root_board: &Board,
     root_halfmove_clock: u32,
     cfg: &SearchConfig,
 ) -> (Option<ChessMove>, u64) {
-    let (root_priors, _root_value) = evaluate(model, device, root_board, root_halfmove_clock);
+    let (root_priors, _root_value) = evaluate(model, device, root_board, root_halfmove_clock).await;
     if root_priors.is_empty() {
         return (None, 0);
     }
@@ -345,7 +356,7 @@ fn search_sequential(
     }
 
     for _ in 0..cfg.simulations {
-        run_one_simulation(&lock, model, device, root_board, root_halfmove_clock, cfg);
+        run_one_simulation(&lock, model, device, root_board, root_halfmove_clock, cfg).await;
     }
 
     let tree = lock.lock().unwrap();
@@ -363,7 +374,7 @@ fn search_parallel(
     root_halfmove_clock: u32,
     cfg: &SearchConfig,
 ) -> (Option<ChessMove>, u64) {
-    let (root_priors, _root_value) = evaluate(model, device, root_board, root_halfmove_clock);
+    let (root_priors, _root_value) = pollster::block_on(evaluate(model, device, root_board, root_halfmove_clock));
     if root_priors.is_empty() {
         return (None, 0);
     }
@@ -424,7 +435,7 @@ fn search_parallel(
                     if prev.is_err() {
                         return; // no simulations left to claim
                     }
-                    run_one_simulation(&lock, model, device, root_board, root_halfmove_clock, cfg);
+                    pollster::block_on(run_one_simulation(&lock, model, device, root_board, root_halfmove_clock, cfg));
                     completed.fetch_add(1, Ordering::Relaxed);
                     last_progress_ms.store(start.elapsed().as_millis() as u64, Ordering::Relaxed);
                 }
@@ -444,7 +455,7 @@ pub struct SearchOutcome {
     pub collisions: u64,
 }
 
-fn search_inner(
+async fn search_inner(
     model: &model::chess_mamba::Model<Be>,
     device: &model::Device,
     fen: &str,
@@ -461,7 +472,7 @@ fn search_inner(
             return search_parallel(model, device, &root_board, root_halfmove_clock, cfg);
         }
     }
-    search_sequential(model, device, &root_board, root_halfmove_clock, cfg)
+    search_sequential(model, device, &root_board, root_halfmove_clock, cfg).await
 }
 
 /// Runs `cfg.simulations` PUCT simulations from the position given as FEN
@@ -472,19 +483,19 @@ fn search_inner(
 /// loss (see `search_parallel`); on WASM, or natively with
 /// `cfg.threads <= 1`, it runs sequentially (see `search_sequential`) --
 /// same search math either way, just one leaf at a time.
-pub fn search(model: &model::chess_mamba::Model<Be>, device: &model::Device, fen: &str, cfg: &SearchConfig) -> Option<String> {
-    search_inner(model, device, fen, cfg).0.map(|mv| mv.to_string())
+pub async fn search(model: &model::chess_mamba::Model<Be>, device: &model::Device, fen: &str, cfg: &SearchConfig) -> Option<String> {
+    search_inner(model, device, fen, cfg).await.0.map(|mv| mv.to_string())
 }
 
 /// Like `search`, plus the collision-count diagnostic (see `Tree::collisions`)
 /// used to benchmark virtual loss's effect -- see `examples/bench_mcts.rs`.
-pub fn search_with_stats(
+pub async fn search_with_stats(
     model: &model::chess_mamba::Model<Be>,
     device: &model::Device,
     fen: &str,
     cfg: &SearchConfig,
 ) -> SearchOutcome {
-    let (best_move, collisions) = search_inner(model, device, fen, cfg);
+    let (best_move, collisions) = search_inner(model, device, fen, cfg).await;
     SearchOutcome { best_move: best_move.map(|mv| mv.to_string()), collisions }
 }
 
@@ -493,7 +504,10 @@ mod tests {
     use super::*;
 
     fn bot_parts() -> (model::chess_mamba::Model<Be>, model::Device) {
-        let device = model::Device::default();
+        // See chess_mamba_bot::tests::bot's comment: share one device across
+        // this process's tests rather than creating one per call.
+        static DEVICE: std::sync::OnceLock<model::Device> = std::sync::OnceLock::new();
+        let device = DEVICE.get_or_init(model::Device::default).clone();
         (model::chess_mamba::Model::from_embedded(&device), device)
     }
 
@@ -501,7 +515,7 @@ mod tests {
     fn sequential_plays_a_legal_move_from_the_start_position() {
         let (model, device) = bot_parts();
         let cfg = SearchConfig { simulations: 16, threads: 1, ..SearchConfig::default() };
-        let mv = search(&model, &device, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &cfg)
+        let mv = pollster::block_on(search(&model, &device, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &cfg))
             .expect("start position has legal moves");
         assert!(mv.len() == 4 || mv.len() == 5);
     }
@@ -510,7 +524,7 @@ mod tests {
     fn parallel_plays_a_legal_move_from_the_start_position() {
         let (model, device) = bot_parts();
         let cfg = SearchConfig { simulations: 64, threads: 4, ..SearchConfig::default() };
-        let mv = search(&model, &device, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &cfg)
+        let mv = pollster::block_on(search(&model, &device, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &cfg))
             .expect("start position has legal moves");
         assert!(mv.len() == 4 || mv.len() == 5);
     }
@@ -520,7 +534,10 @@ mod tests {
         let (model, device) = bot_parts();
         let cfg = SearchConfig { simulations: 16, threads: 1, ..SearchConfig::default() };
         // Fool's-mate final position: white to move, already checkmated.
-        assert!(search(&model, &device, "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", &cfg).is_none());
+        assert!(
+            pollster::block_on(search(&model, &device, "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", &cfg))
+                .is_none()
+        );
     }
 
     #[test]
@@ -532,7 +549,7 @@ mod tests {
             hard_timeout: Duration::from_secs(20),
             ..SearchConfig::default()
         };
-        let mv = search(&model, &device, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &cfg);
+        let mv = pollster::block_on(search(&model, &device, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &cfg));
         assert!(mv.is_some());
     }
 }

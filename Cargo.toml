@@ -9,6 +9,15 @@ edition = "2024"
 [patch.crates-io]
 ale = { git = "https://github.com/BrageHK/ale-rs", rev = "6f9b68fca8be9e21c98b305b4abcbcff5f1d00af" }
 ale-sys = { git = "https://github.com/BrageHK/ale-rs", rev = "6f9b68fca8be9e21c98b305b4abcbcff5f1d00af" }
+# burn-cubecl 0.21.0's `bool_from_data` rejects `BoolStore::Native`, which is
+# what burn-store's Burnpack format always tags Bool tensors with regardless
+# of backend -- so any Bool `Param` (chess_mamba's onnx-derived model has
+# several) panics on first load on this cubecl-backed (wgpu/vulkan/rocm)
+# backend, even though the byte layout is identical to `BoolStore::U8`. See
+# vendor/burn-cubecl-0.21.0/src/ops/bool_tensor.rs for the one-line retag fix,
+# vendored here until upstream burn accepts it.
+burn-cubecl = { path = "vendor/burn-cubecl-0.21.0" }
+burn-cubecl-fusion = { path = "vendor/burn-cubecl-fusion-0.21.0" }
 
 [workspace.dependencies]
 burn = { version = "~0.21", default-features = false }

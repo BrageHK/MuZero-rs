@@ -34,8 +34,7 @@ impl core::panic::RefUnwindSafe for ChessGame {}
 /// Builds the agent: sets up the backend and loads the embedded weights.
 #[cfg_attr(target_family = "wasm", wasm_bindgen::prelude::wasm_bindgen)]
 pub async fn create_chess(simulations: u32) -> ChessGame {
-    let device = Device::default();
-    model::init_backend(&device).await;
+    let device = model::shared_device().await;
     ChessGame {
         env: Chess::new(),
         net: model::chess::load(&device),

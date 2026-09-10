@@ -34,3 +34,5 @@ build/
 /model.bak/
 /model_*/
 vendor/
+
+.venv-rocm/

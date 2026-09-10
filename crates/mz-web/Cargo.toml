@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 mz-core = { path = "../mz-core" }
 chess = "3.2.0"
-burn = { workspace = true, features = ["std"] }
+burn = { workspace = true, features = ["std", "flex"] }
 # Runtime dependency of the code build.rs generates from onnx/chess_mamba.onnx
 # (see model/chess_mamba.rs) -- burn-onnx's generated `Model` loads its
 # embedded weights through `burn_store::BurnpackStore`.
@@ -32,6 +32,9 @@ tch = { version = "0.22", optional = true }
 [target.'cfg(target_family = "wasm")'.dependencies]
 getrandom = { version = "0.4", features = ["wasm_js"] }
 
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+pollster = "0.4"
+
 [build-dependencies]
 # Converts onnx/chess_mamba.onnx (ChessMamba, exported from the separate
 # bee-chess repo's training/src/bee_training/chess_mamba/export_onnx.py)
@@ -41,14 +44,11 @@ burn-onnx = { workspace = true }
 [dev-dependencies]
 mz-train = { path = "../mz-train", default-features = false, features = ["ndarray"] }
 fastrand = "2.4.1"
-# examples/uci_chess_mamba_mcts.rs only: create_chess_mamba() is async only
-# for wasm-bindgen's calling convention (init_backend is a no-op on every
-# native backend), so a single manual poll -- no real runtime -- is enough.
-pollster = "0.4"
 
 [features]
-default = ["flex"]
-flex = ["burn/flex", "mz-core/flex"]
+default = ["webgpu"]
+flex = ["mz-core/flex"]
+webgpu = ["burn/webgpu", "mz-core/webgpu"]
 # Native tests/benchmarks only -- none of these build for wasm32.
 ndarray = ["burn/ndarray", "mz-core/ndarray"]
 tch = ["burn/tch", "mz-core/tch", "dep:tch"]

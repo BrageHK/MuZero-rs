@@ -81,12 +81,23 @@
             <option value="800">Maximum (800)</option>
           </select>
         </label>
+        <label class="sims" id="mamba-sims-label" hidden>
+          <span>MCTS simulations</span>
+          <select id="mamba-sims">
+            <option value="0" selected>Policy only (0)</option>
+            <option value="16">Low (16)</option>
+            <option value="64">Medium (64)</option>
+            <option value="128">Standard (128)</option>
+            <option value="400">High (400)</option>
+          </select>
+        </label>
       </div>
 
       <p class="hint" id="hint">
         Click or drag a piece to move it. Alpha-beta is a search over material and piece-square tables; MuZero is the
-        trained self-play agent; Bee-Mamba is a separate, searchless Mamba/attention model that plays its policy
-        head's top move directly.
+        trained self-play agent; Bee-Mamba is a separate Mamba/attention model -- at 0 simulations it just plays its
+        policy head's top move directly (searchless), above 0 it runs a PUCT MCTS search on top of that policy/value
+        head instead.
       </p>
 
       <p class="eval" id="eval"></p>
